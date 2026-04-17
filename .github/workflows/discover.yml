@@ -28,26 +28,26 @@ jobs:
         with:
           python-version: '3.12'
 
-      - run: pip install -r opensource-project-opportunities-pipeline/requirements.txt
+      - run: pip install -r requirements.txt
 
       - name: Init DB
-        run: python opensource-project-opportunities-pipeline/stages/init_db.py
+        run: python stages/init_db.py
 
       - name: Stage 1 - Discover
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python opensource-project-opportunities-pipeline/stages/discover.py
+        run: python stages/discover.py
 
       - name: Stage 2 - Schedule
         run: |
-          python opensource-project-opportunities-pipeline/stages/schedule.py \
+          python stages/schedule.py \
             --mode "${{ github.event.inputs.mode || 'incremental' }}"
 
       - name: Commit results
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add opensource-project-opportunities-pipeline/data/pipeline.db
+          git add data/pipeline.db
           git diff --staged --quiet || \
             git commit -m "chore: daily discover $(date -u +%Y-%m-%d)"
           _push_ok=0

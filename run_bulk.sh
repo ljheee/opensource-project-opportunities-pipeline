@@ -13,6 +13,7 @@ if [ -f "$PIPELINE_DIR/.env" ]; then
   set -a; source "$PIPELINE_DIR/.env"; set +a
 fi
 CLI_TOOL="${CLI_TOOL:-claude --dangerously-skip-permissions}"
+
 # 校验 BATCH_SIZE：必须为正整数，防止 LIMIT -1 / LIMIT 0 穿透到 SQLite 处理全量项目
 if ! [[ "$BATCH_SIZE" =~ ^[0-9]+$ ]] || [ "$BATCH_SIZE" -le 0 ] || [ "$BATCH_SIZE" -gt 100 ]; then
   echo "ERROR: BATCH_SIZE 必须为 1~100 之间的正整数，当前值: '$BATCH_SIZE'"
@@ -43,15 +44,15 @@ if [ -z "${GITHUB_TOKEN:-}" ]; then
 fi
 
 # 注意：若上次 push 失败导致本地有未提交修改，checkout 会丢弃这些修改——先打印 WARN 便于排查
-_LOCAL_CHANGES=$(git -C "$PIPELINE_DIR/.." diff --name-only HEAD -- opensource-project-opportunities-pipeline/ 2>/dev/null || true)
+_LOCAL_CHANGES=$(git -C "$PIPELINE_DIR" diff --name-only HEAD 2>/dev/null || true)
 if [ -n "$_LOCAL_CHANGES" ]; then
-  echo "WARN: opensource-project-opportunities-pipeline/ 目录存在未提交的本地修改（可能是上次 push 失败遗留），将被丢弃并以 remote 为准："
+  echo "WARN: 存在未提交的本地修改（可能是上次 push 失败遗留），将被丢弃并以 remote 为准："
   echo "$_LOCAL_CHANGES" | sed 's/^/  /'
 fi
-git -C "$PIPELINE_DIR/.." reset HEAD -- opensource-project-opportunities-pipeline/ 2>/dev/null || true
-git -C "$PIPELINE_DIR/.." checkout -- opensource-project-opportunities-pipeline/ 2>/dev/null || true
+git -C "$PIPELINE_DIR" reset HEAD 2>/dev/null || true
+git -C "$PIPELINE_DIR" checkout -- . 2>/dev/null || true
 # pull --rebase 失败（网络问题/冲突）时降级为警告，不中止脚本
-git -C "$PIPELINE_DIR/.." pull --rebase || \
+git -C "$PIPELINE_DIR" pull --rebase || \
   echo "WARN: git pull --rebase 失败，以本地当前状态继续运行（可能缺少远端最新变更）。"
 python3 "$STAGES/init_db.py"
 
@@ -103,30 +104,26 @@ if [ "$TOTAL" -eq 0 ]; then
     echo "WARN: scoring.py 返回非零退出码，机会点评分可能不完整，继续生成报告并提交 DB。"
   python3 "$STAGES/report.py" --date "$DATE" || \
     echo "WARN: report.py 返回非零退出码，报告可能不完整，继续提交 DB 防止数据丢失。"
-  git -C "$PIPELINE_DIR/.." add "$PIPELINE_DIR/data/pipeline.db"
-  # 报告文件可能因 report.py 失败而不存在；git add 对不存在文件返回退出码 128，会触发 set -e 中止脚本。
-  # 仅当文件存在时才 add，确保 DB 始终能提交，防止分析数据丢失。
+  git -C "$PIPELINE_DIR" add "$PIPELINE_DIR/data/pipeline.db"
   test -f "$PIPELINE_DIR/data/reports/$DATE.md" && \
-    git -C "$PIPELINE_DIR/.." add "$PIPELINE_DIR/data/reports/$DATE.md" || true
-  git -C "$PIPELINE_DIR/.." diff --staged --quiet || \
-    git -C "$PIPELINE_DIR/.." commit \
+    git -C "$PIPELINE_DIR" add "$PIPELINE_DIR/data/reports/$DATE.md" || true
+  git -C "$PIPELINE_DIR" diff --staged --quiet || \
+    git -C "$PIPELINE_DIR" commit \
       -m "chore: bulk queue empty, scoring/report update $DATE"
   _push_ok=0
   for _i in 1 2 3; do
-    if git -C "$PIPELINE_DIR/.." push; then
+    if git -C "$PIPELINE_DIR" push; then
       _push_ok=1; break
     fi
     echo "WARN: git push 失败（attempt $_i/3），10 秒后 pull --rebase 再试..."
     sleep 10
-    git -C "$PIPELINE_DIR/.." pull --rebase || true
+    git -C "$PIPELINE_DIR" pull --rebase || true
   done
   [ "$_push_ok" -eq 0 ] && \
-    echo "ERROR: git push 连续 3 次失败，请手动推送：git -C $PIPELINE_DIR/.. pull --rebase && git push"
+    echo "ERROR: git push 连续 3 次失败，请手动推送：cd $PIPELINE_DIR && git pull --rebase && git push"
   exit 0
 fi
 
-# schedule.py 失败不应中断 pipeline：filter 阶段已更新项目状态，若因 schedule 异常触发 set -e 退出，
-# 下次 run_bulk.sh 的 git checkout 会丢弃这些变更。降级处理同 run.sh。
 python3 "$STAGES/schedule.py" --mode bulk_first --batch-size "$BATCH_SIZE" || \
   echo "WARN: schedule.py 返回非零退出码，今日可能无调度任务，继续执行后续步骤。"
 
@@ -137,25 +134,23 @@ if [ "$PENDING" -eq 0 ]; then
     echo "WARN: scoring.py 返回非零退出码，机会点评分可能不完整，继续生成报告并提交 DB。"
   python3 "$STAGES/report.py" --date "$DATE" || \
     echo "WARN: report.py 返回非零退出码，报告可能不完整，继续提交 DB 防止数据丢失。"
-  git -C "$PIPELINE_DIR/.." add "$PIPELINE_DIR/data/pipeline.db"
-  # 报告文件可能因 report.py 失败而不存在；git add 对不存在文件返回退出码 128，会触发 set -e 中止脚本。
-  # 仅当文件存在时才 add，确保 DB 始终能提交，防止分析数据丢失。
+  git -C "$PIPELINE_DIR" add "$PIPELINE_DIR/data/pipeline.db"
   test -f "$PIPELINE_DIR/data/reports/$DATE.md" && \
-    git -C "$PIPELINE_DIR/.." add "$PIPELINE_DIR/data/reports/$DATE.md" || true
-  git -C "$PIPELINE_DIR/.." diff --staged --quiet || \
-    git -C "$PIPELINE_DIR/.." commit \
+    git -C "$PIPELINE_DIR" add "$PIPELINE_DIR/data/reports/$DATE.md" || true
+  git -C "$PIPELINE_DIR" diff --staged --quiet || \
+    git -C "$PIPELINE_DIR" commit \
       -m "chore: scoring/report update $DATE (no new tasks)"
   _push_ok=0
   for _i in 1 2 3; do
-    if git -C "$PIPELINE_DIR/.." push; then
+    if git -C "$PIPELINE_DIR" push; then
       _push_ok=1; break
     fi
     echo "WARN: git push 失败（attempt $_i/3），10 秒后 pull --rebase 再试..."
     sleep 10
-    git -C "$PIPELINE_DIR/.." pull --rebase || true
+    git -C "$PIPELINE_DIR" pull --rebase || true
   done
   [ "$_push_ok" -eq 0 ] && \
-    echo "ERROR: git push 连续 3 次失败，请手动推送：git -C $PIPELINE_DIR/.. pull --rebase && git push"
+    echo "ERROR: git push 连续 3 次失败，请手动推送：cd $PIPELINE_DIR && git pull --rebase && git push"
   exit 0
 fi
 echo "[2/3] Stage 4: 深层分析 ($PENDING 个)..."
@@ -168,8 +163,6 @@ $CLI_TOOL --print "$ANALYZE_PROMPT" || \
 
 echo "[3/3] 生成报告并推送..."
 echo "scoring.py: 规则化评分..."
-# scoring.py 失败不应中断 pipeline：analyze 阶段已将任务标记 done 并写入 DB，
-# 若因 scoring 异常触发 set -e 退出，下次 run_bulk.sh 的 git checkout 会丢失这些数据。
 python3 "$STAGES/scoring.py" || \
   echo "WARN: scoring.py 返回非零退出码，机会点评分可能不完整，继续生成报告并提交 DB。"
 
@@ -180,30 +173,26 @@ REMAINING=$(sqlite3 "$DB" "SELECT COUNT(*) FROM projects WHERE status='bulk_pend
 DONE=$(sqlite3 "$DB" "SELECT COUNT(*) FROM tasks WHERE task_date='$DATE' AND status='done';")
 SKIPPED=$(sqlite3 "$DB" "SELECT COUNT(*) FROM tasks WHERE task_date='$DATE' AND status='skipped';")
 
-git -C "$PIPELINE_DIR/.." add "$PIPELINE_DIR/data/pipeline.db"
-# 报告文件可能因 report.py 失败而不存在；git add 对不存在文件返回退出码 128，会触发 set -e 中止脚本。
-# 仅当文件存在时才 add，确保 DB 始终能提交，防止分析数据丢失。
+git -C "$PIPELINE_DIR" add "$PIPELINE_DIR/data/pipeline.db"
 test -f "$PIPELINE_DIR/data/reports/$DATE.md" && \
-  git -C "$PIPELINE_DIR/.." add "$PIPELINE_DIR/data/reports/$DATE.md" || true
-git -C "$PIPELINE_DIR/.." diff --staged --quiet || \
-  git -C "$PIPELINE_DIR/.." commit \
+  git -C "$PIPELINE_DIR" add "$PIPELINE_DIR/data/reports/$DATE.md" || true
+git -C "$PIPELINE_DIR" diff --staged --quiet || \
+  git -C "$PIPELINE_DIR" commit \
     -m "feat: bulk analysis $DATE (done=$DONE skipped=$SKIPPED remaining=$REMAINING)"
 
-# push 可能因 Actions 同时写入而失败（non-fast-forward）；
-# 最多重试 3 次：每次先 pull --rebase 拉取远端最新再 push
 _push_ok=0
 for _i in 1 2 3; do
-  if git -C "$PIPELINE_DIR/.." push; then
+  if git -C "$PIPELINE_DIR" push; then
     _push_ok=1
     break
   fi
   echo "WARN: git push 失败（attempt $_i/3），10 秒后 pull --rebase 再试..."
   sleep 10
-  git -C "$PIPELINE_DIR/.." pull --rebase || true
+  git -C "$PIPELINE_DIR" pull --rebase || true
 done
 if [ "$_push_ok" -eq 0 ]; then
   echo "ERROR: git push 连续 3 次失败，本次分析结果已保存到本地 DB，但未推送到 remote。"
-  echo "       请手动执行：git -C $PIPELINE_DIR/.. pull --rebase && git -C $PIPELINE_DIR/.. push"
+  echo "       请手动执行：cd $PIPELINE_DIR && git pull --rebase && git push"
 fi
 
 echo "=== 完成 === 本批: $PENDING | 剩余: $REMAINING"

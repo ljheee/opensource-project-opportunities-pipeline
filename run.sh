@@ -20,9 +20,7 @@ echo "=== GitHub Opportunities Pipeline - $DATE ==="
 
 # 进程互斥锁：防止 run.sh / run_bulk.sh 并发运行操作同一个 SQLite DB。
 # flock -n：非阻塞模式，若锁已被占用立即退出（避免两个进程同时 analyze 造成 DB 锁竞争）。
-# 锁文件放在 opensource-project-opportunities-pipeline/data/ 下（与 DB 同目录），DB 目录不存在时先创建。
-# macOS 原生不提供 flock 命令行工具（flock(2) 是系统调用，但无对应 CLI）；
-# 若 flock 不可用，打印警告后跳过互斥锁继续运行（不因 set -e 退出）。
+# macOS 原生不提供 flock 命令行工具；若不可用，打印警告后跳过互斥锁继续运行。
 _LOCK_FILE="$PIPELINE_DIR/data/.pipeline.lock"
 mkdir -p "$(dirname "$_LOCK_FILE")"
 if command -v flock >/dev/null 2>&1; then
@@ -43,20 +41,17 @@ if [ -z "${GITHUB_TOKEN:-}" ]; then
 fi
 
 # 0. 拉取最新状态（先 pull 再 init，避免 pull 覆盖刚初始化的 DB）
-# 上次崩溃可能在 DB 中留下未提交的中间状态；直接丢弃本地修改，以 remote 为准
-# （崩溃时的 DB 状态不完整，不应恢复；run.sh 的 analyzing 重置逻辑会处理悬挂状态）
 # 注意：若上次 push 失败导致本地有未提交修改，checkout 会丢弃这些修改——先打印 WARN 便于排查
 echo "[0/5] git pull..."
-_LOCAL_CHANGES=$(git -C "$PIPELINE_DIR/.." diff --name-only HEAD -- opensource-project-opportunities-pipeline/ 2>/dev/null || true)
+_LOCAL_CHANGES=$(git -C "$PIPELINE_DIR" diff --name-only HEAD 2>/dev/null || true)
 if [ -n "$_LOCAL_CHANGES" ]; then
-  echo "WARN: opensource-project-opportunities-pipeline/ 目录存在未提交的本地修改（可能是上次 push 失败遗留），将被丢弃并以 remote 为准："
+  echo "WARN: 存在未提交的本地修改（可能是上次 push 失败遗留），将被丢弃并以 remote 为准："
   echo "$_LOCAL_CHANGES" | sed 's/^/  /'
 fi
-git -C "$PIPELINE_DIR/.." reset HEAD -- opensource-project-opportunities-pipeline/ 2>/dev/null || true
-git -C "$PIPELINE_DIR/.." checkout -- opensource-project-opportunities-pipeline/ 2>/dev/null || true
+git -C "$PIPELINE_DIR" reset HEAD 2>/dev/null || true
+git -C "$PIPELINE_DIR" checkout -- . 2>/dev/null || true
 # pull --rebase 失败（网络问题/冲突）时降级为警告，不中止脚本
-# （本地修改已丢弃，若 pull 失败则以本地当前状态继续；init_db 会修复悬挂状态）
-git -C "$PIPELINE_DIR/.." pull --rebase || \
+git -C "$PIPELINE_DIR" pull --rebase || \
   echo "WARN: git pull --rebase 失败，以本地当前状态继续运行（可能缺少远端最新变更）。"
 
 # 初始化 DB（幂等）
@@ -106,9 +101,6 @@ fi
 
 # 无论是否有过滤任务，都需要调度（触发/增量任务不依赖过滤结果）
 echo "[2/5] 调度..."
-# schedule.py 失败不应中断 pipeline：discover.py 已写入新项目，若因 schedule 异常触发 set -e 退出，
-# 下次 run.sh 的 git checkout 会丢弃 discover 结果。此处降级处理：schedule 失败时
-# PENDING 仍为 0，pipeline 会走"无任务"分支执行 scoring+report+push 保存数据。
 python3 "$STAGES/schedule.py" --mode incremental || \
   echo "WARN: schedule.py 返回非零退出码，今日可能无调度任务，继续执行后续步骤。"
 
@@ -122,25 +114,23 @@ if [ "$PENDING" -eq 0 ]; then
     echo "WARN: scoring.py 返回非零退出码，机会点评分可能不完整，继续生成报告并提交 DB。"
   python3 "$STAGES/report.py" --date "$DATE" || \
     echo "WARN: report.py 返回非零退出码，报告可能不完整，继续提交 DB 防止数据丢失。"
-  git -C "$PIPELINE_DIR/.." add "$PIPELINE_DIR/data/pipeline.db"
-  # 报告文件可能因 report.py 失败而不存在；git add 对不存在文件返回退出码 128，会触发 set -e 中止脚本。
-  # 仅当文件存在时才 add，确保 DB 始终能提交，防止分析数据丢失。
+  git -C "$PIPELINE_DIR" add "$PIPELINE_DIR/data/pipeline.db"
   test -f "$PIPELINE_DIR/data/reports/$DATE.md" && \
-    git -C "$PIPELINE_DIR/.." add "$PIPELINE_DIR/data/reports/$DATE.md" || true
-  git -C "$PIPELINE_DIR/.." diff --staged --quiet || \
-    git -C "$PIPELINE_DIR/.." commit \
+    git -C "$PIPELINE_DIR" add "$PIPELINE_DIR/data/reports/$DATE.md" || true
+  git -C "$PIPELINE_DIR" diff --staged --quiet || \
+    git -C "$PIPELINE_DIR" commit \
       -m "chore: scoring/report update $DATE (no new tasks)"
   _push_ok=0
   for _i in 1 2 3; do
-    if git -C "$PIPELINE_DIR/.." push; then
+    if git -C "$PIPELINE_DIR" push; then
       _push_ok=1; break
     fi
     echo "WARN: git push 失败（attempt $_i/3），10 秒后 pull --rebase 再试..."
     sleep 10
-    git -C "$PIPELINE_DIR/.." pull --rebase || true
+    git -C "$PIPELINE_DIR" pull --rebase || true
   done
   [ "$_push_ok" -eq 0 ] && \
-    echo "ERROR: git push 连续 3 次失败，请手动推送：git -C $PIPELINE_DIR/.. pull --rebase && git push"
+    echo "ERROR: git push 连续 3 次失败，请手动推送：cd $PIPELINE_DIR && git pull --rebase && git push"
   exit 0
 fi
 
@@ -158,9 +148,6 @@ $CLI_TOOL --print "$ANALYZE_PROMPT" || \
 # 4. Stage 4.5 + Stage 5: 规则评分 + 生成报告
 echo "[4/5] Stage 4.5+5: 规则评分 + 生成报告..."
 echo "scoring.py: 规则化评分..."
-# scoring.py 失败不应中断 pipeline：analyze 阶段已将任务标记 done 并写入 DB，
-# 若因 scoring 异常触发 set -e 退出，下次 run.sh 的 git checkout 会丢失这些数据。
-# 此处捕获非零退出码，打印 WARN 后继续生成报告和 git commit。
 python3 "$STAGES/scoring.py" || \
   echo "WARN: scoring.py 返回非零退出码，机会点评分可能不完整，继续生成报告并提交 DB。"
 
@@ -175,31 +162,27 @@ SKIPPED=$(sqlite3 "$DB" \
 
 # 5. 推回 repo
 echo "[5/5] git push..."
-git -C "$PIPELINE_DIR/.." add "$PIPELINE_DIR/data/pipeline.db"
-# 报告文件可能因 report.py 失败而不存在；git add 对不存在文件返回退出码 128，会触发 set -e 中止脚本。
-# 仅当文件存在时才 add，确保 DB 始终能提交，防止分析数据丢失。
+git -C "$PIPELINE_DIR" add "$PIPELINE_DIR/data/pipeline.db"
 test -f "$PIPELINE_DIR/data/reports/$DATE.md" && \
-  git -C "$PIPELINE_DIR/.." add "$PIPELINE_DIR/data/reports/$DATE.md" || true
+  git -C "$PIPELINE_DIR" add "$PIPELINE_DIR/data/reports/$DATE.md" || true
 
-git -C "$PIPELINE_DIR/.." diff --staged --quiet || \
-  git -C "$PIPELINE_DIR/.." commit \
+git -C "$PIPELINE_DIR" diff --staged --quiet || \
+  git -C "$PIPELINE_DIR" commit \
     -m "feat: analysis report $DATE (done=$DONE skipped=$SKIPPED)"
 
-# push 可能因 Actions 同时写入而失败（non-fast-forward）；
-# 最多重试 3 次：每次先 pull --rebase 拉取远端最新再 push
 _push_ok=0
 for _i in 1 2 3; do
-  if git -C "$PIPELINE_DIR/.." push; then
+  if git -C "$PIPELINE_DIR" push; then
     _push_ok=1
     break
   fi
   echo "WARN: git push 失败（attempt $_i/3），10 秒后 pull --rebase 再试..."
   sleep 10
-  git -C "$PIPELINE_DIR/.." pull --rebase || true
+  git -C "$PIPELINE_DIR" pull --rebase || true
 done
 if [ "$_push_ok" -eq 0 ]; then
   echo "ERROR: git push 连续 3 次失败，本次分析结果已保存到本地 DB，但未推送到 remote。"
-  echo "       请手动执行：git -C $PIPELINE_DIR/.. pull --rebase && git -C $PIPELINE_DIR/.. push"
+  echo "       请手动执行：cd $PIPELINE_DIR && git pull --rebase && git push"
 fi
 
 echo "=== 完成 ==="
