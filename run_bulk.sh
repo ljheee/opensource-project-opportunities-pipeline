@@ -6,6 +6,13 @@ DB="$PIPELINE_DIR/data/pipeline.db"
 PROMPTS="$PIPELINE_DIR/prompts"
 STAGES="$PIPELINE_DIR/stages"
 BATCH_SIZE=${1:-5}
+
+# 加载 .env（若存在），否则使用默认值
+if [ -f "$PIPELINE_DIR/.env" ]; then
+  # shellcheck disable=SC1091
+  set -a; source "$PIPELINE_DIR/.env"; set +a
+fi
+CLI_TOOL="${CLI_TOOL:-claude --dangerously-skip-permissions}"
 # 校验 BATCH_SIZE：必须为正整数，防止 LIMIT -1 / LIMIT 0 穿透到 SQLite 处理全量项目
 if ! [[ "$BATCH_SIZE" =~ ^[0-9]+$ ]] || [ "$BATCH_SIZE" -le 0 ] || [ "$BATCH_SIZE" -gt 100 ]; then
   echo "ERROR: BATCH_SIZE 必须为 1~100 之间的正整数，当前值: '$BATCH_SIZE'"
@@ -79,7 +86,7 @@ if [ "$FILTER_COUNT" -gt 0 ]; then
       echo "WARN: 语义过滤已执行 20 轮，仍有未过滤项目，跳出循环。"
       break
     fi
-    claude --dangerously-skip-permissions --print "$FILTER_PROMPT" || {
+    $CLI_TOOL --print "$FILTER_PROMPT" || {
       echo "WARN: claude filter 返回非零退出码（round=$_filter_rounds），本轮跳过，剩余项目留待下次重试。"
       break
     }
@@ -156,7 +163,7 @@ ANALYZE_PROMPT=$(sed \
   -e "s|/path/to/pipeline/data/pipeline.db|$DB|g" \
   -e "s|ANALYSIS_DATE|$DATE|g" \
   "$PROMPTS/analyze.md")
-claude --dangerously-skip-permissions --print "$ANALYZE_PROMPT" || \
+$CLI_TOOL --print "$ANALYZE_PROMPT" || \
   echo "WARN: claude analyze 返回非零退出码，部分任务可能未完成，继续执行评分和报告。"
 
 echo "[3/3] 生成报告并推送..."
