@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+.env
+# SQLite WAL 模式产生的辅助文件，不应提交到 repo（pipeline.db 在 close 后会自动 checkpoint，
+# 正常 push 时这两个文件为空或不存在；若存在说明有进程仍持有连接，强行提交会导致 remote
+# 拿到不一致的 DB 快照）
+data/*.db-wal
+data/*.db-shm
+# 进程互斥锁文件（运行时临时文件，不需要版本追踪）
+data/.pipeline.lock

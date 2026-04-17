@@ -1,0 +1,65 @@
+name: Daily Discover & Schedule
+
+on:
+  schedule:
+    - cron: '0 1 * * *'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: 'bulk_first / incremental'
+        default: 'incremental'
+
+permissions:
+  contents: write
+
+# 防止 schedule 触发与 workflow_dispatch 手动触发并发运行，避免 SQLite 锁竞争和 git push 冲突。
+# cancel-in-progress: false 表示新触发不会取消正在运行的实例，而是排队等待，保证每次 discover 都完整执行。
+concurrency:
+  group: discover-pipeline
+  cancel-in-progress: false
+
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - run: pip install -r opensource-project-opportunities-pipeline/requirements.txt
+
+      - name: Init DB
+        run: python opensource-project-opportunities-pipeline/stages/init_db.py
+
+      - name: Stage 1 - Discover
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python opensource-project-opportunities-pipeline/stages/discover.py
+
+      - name: Stage 2 - Schedule
+        run: |
+          python opensource-project-opportunities-pipeline/stages/schedule.py \
+            --mode "${{ github.event.inputs.mode || 'incremental' }}"
+
+      - name: Commit results
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add opensource-project-opportunities-pipeline/data/pipeline.db
+          git diff --staged --quiet || \
+            git commit -m "chore: daily discover $(date -u +%Y-%m-%d)"
+          _push_ok=0
+          for _i in 1 2 3; do
+            if git push; then
+              _push_ok=1; break
+            fi
+            echo "WARN: git push 失败（attempt $_i/3），10 秒后 pull --rebase 再试..."
+            sleep 10
+            git pull --rebase || true
+          done
+          if [ "$_push_ok" -eq 0 ]; then
+            echo "ERROR: git push 连续 3 次失败，本次 discover 结果已保存到本地，但未推送到 remote。"
+            exit 1
+          fi
