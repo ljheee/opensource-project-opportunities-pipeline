@@ -81,7 +81,8 @@ FILTER_COUNT=$(sqlite3 "$DB" \
 
 if [ "$FILTER_COUNT" -gt 0 ]; then
   echo "[1/5] Stage 3: 语义过滤 ($FILTER_COUNT 个，每批最多 100)..."
-  FILTER_PROMPT=$(sed "s|/path/to/pipeline/data/pipeline.db|$DB|g" "$PROMPTS/filter.md")
+  _FILTER_TMP=$(mktemp)
+  sed "s|/path/to/pipeline/data/pipeline.db|$DB|g" "$PROMPTS/filter.md" > "$_FILTER_TMP"
   # filter.md 每次最多处理 100 个，循环直到全部过滤完（最多 20 轮防止死循环）
   _filter_rounds=0
   while [ "$(sqlite3 "$DB" "SELECT COUNT(*) FROM project_meta WHERE filter_status='pending';")" -gt 0 ]; do
@@ -90,11 +91,12 @@ if [ "$FILTER_COUNT" -gt 0 ]; then
       echo "WARN: 语义过滤已执行 20 轮，仍有未过滤项目，跳出循环。"
       break
     fi
-    $CLI_TOOL --print "$FILTER_PROMPT" || {
+    eval "$CLI_TOOL" --print - < "$_FILTER_TMP" || {
       echo "WARN: claude filter 返回非零退出码（round=$_filter_rounds），本轮跳过，剩余项目留待下次重试。"
       break
     }
   done
+  rm -f "$_FILTER_TMP"
 else
   echo "[1/5] Stage 3: 无待过滤项目，跳过。"
 fi
@@ -138,12 +140,14 @@ echo "今日待分析任务：$PENDING 个"
 
 # 3. Stage 4: 深层分析
 echo "[3/5] Stage 4: 深层分析 ($PENDING 个任务)..."
-ANALYZE_PROMPT=$(sed \
+_ANALYZE_TMP=$(mktemp)
+sed \
   -e "s|/path/to/pipeline/data/pipeline.db|$DB|g" \
   -e "s|ANALYSIS_DATE|$DATE|g" \
-  "$PROMPTS/analyze.md")
-$CLI_TOOL --print "$ANALYZE_PROMPT" || \
+  "$PROMPTS/analyze.md" > "$_ANALYZE_TMP"
+eval "$CLI_TOOL" --print - < "$_ANALYZE_TMP" || \
   echo "WARN: claude analyze 返回非零退出码，部分任务可能未完成，继续执行评分和报告。"
+rm -f "$_ANALYZE_TMP"
 
 # 4. Stage 4.5 + Stage 5: 规则评分 + 生成报告
 echo "[4/5] Stage 4.5+5: 规则评分 + 生成报告..."
