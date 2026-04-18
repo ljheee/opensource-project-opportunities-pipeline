@@ -80,6 +80,7 @@ UPDATE projects SET status = 'analyzing'                        WHERE id = '<pro
 - 若 `canonical_url` 为 NULL、空字符串、或非 URL 占位符（字符串值为 `"unknown"`、`"N/A"`、`"—"`、`"-"`、`"null"` 等，即不以 `http` 开头），跳过本步骤及 Step 4，`canonical_gap` 填 "canonical_url 未知，无法对比"，`peer_comparison` 填 "—"；此时 Step 7 中所有机会点的 `value_evidence.canonical_impl_url` 和 `difficulty_evidence.canonical_impl_url` **必须填空字符串 `""`**（不可填 canonical_url 本身或目标项目的文件 URL——scoring.py 以空字符串判定"无参考实现"，填入任何非空 URL 均会导致 value/difficulty 错误上调）
 - WebFetch `<canonical_url>` — 原版项目主页（含 README）
 - 提取原版功能全集（feature matrix）：列出所有核心功能模块
+- **必须定位每个核心功能的实现文件**：对每个识别到的功能模块，调用 GitHub API `GET /repos/<canonical_owner>/<canonical_repo>/git/trees/HEAD?recursive=1` 获取目录结构，结合功能名称定位具体实现文件路径，构造文件 URL 格式为 `https://github.com/<canonical_owner>/<canonical_repo>/blob/main/<path/to/file>`（分支名不确定时用 `master` 重试）；**无法定位具体文件时才填空字符串**，不可直接填仓库首页 URL
 
 ### Step 4: 横向对比其他语言版本
 
@@ -95,14 +96,15 @@ UPDATE projects SET status = 'analyzing'                        WHERE id = '<pro
 
 - 对照目录结构，识别核心模块
 - 发现原版有但目标版本完全缺失的模块（这是 feature_gap 类型机会的来源）
-- **将发现的每个缺口暂存为结构化条目**，格式为 `(feature_name, canonical_lang)`，例如 `("adaptive-throttling", "Java")`；**在内存中维护这份列表，直到 Step 7 写库时使用**；Step 7 写库时须将每个条目转化为 `source_ref = canonical:<canonical_lang>/<feature-name>`（如 `canonical:Java/adaptive-throttling`），此列表即为 Step 7 中 feature_gap 机会点的唯一来源
+- **将发现的每个缺口暂存为结构化条目**，格式为 `(feature_name, canonical_lang, canonical_impl_url)`，例如 `("adaptive-throttling", "Java", "https://github.com/alibaba/Sentinel/blob/master/sentinel-core/src/main/java/com/alibaba/csp/sentinel/slots/block/flow/controller/WarmUpController.java")`；**在内存中维护这份列表，直到 Step 7 写库时使用**；Step 7 写库时须将每个条目转化为 `source_ref = canonical:<canonical_lang>/<feature-name>`（如 `canonical:Java/adaptive-throttling`），此列表即为 Step 7 中 feature_gap 机会点的唯一来源
+  - `canonical_impl_url` **必须是原版仓库中实现该功能的具体文件 URL**（非仓库首页，非目录页）；在 Step 3 已获取的目录结构中搜索文件名含功能关键词的文件（如 `RateLimiter`、`CircuitBreaker`、`Scheduler`）；找不到具体文件时才填空字符串 `""`
   - `feature_name` 须连字符分隔且足够具体，确保在同一 `project_id` 内唯一；超过 4 段时取最核心 2 段
   - 若 `canonical_url` 未知（Step 3 已跳过），则 Step 5 不应产生 feature_gap 条目（无原版参照，无法确认缺口）
 - **与 Step 6 issue 去重（仅限 feature_request 类 issue）**：若 Step 5 的某个 feature_gap 缺口与 Step 6 的某个 issue 描述的是**同一个缺失功能**（判断标准：issue 的核心诉求是"请求增加某功能"即 source_type 为 `issue`，且 issue 标题/正文中的功能名称与 feature_gap 名称语义相同，例如 issue 标题含 "add rate-limit support" 而 feature_gap 名为 "rate-limit"），则**合并为一条 feature_gap 记录**，并将该 issue 的 `issue_number` 和 `issue_reactions` 填入该 feature_gap 条目（而非丢弃），确保 scoring.py 能读到 reactions 数据进行 value 判断；该 issue 条目不再单独写库，避免同一功能产生两条记录。**注意以下情况不合并，需分别写库**：① issue 是 bug 报告（功能存在但有问题），而非功能缺失请求——bug 与 feature_gap 是不同维度的问题；② issue 描述的功能与 feature_gap 功能名称仅部分相关（如 issue 是 "rate-limit 在高并发下精度问题"，feature_gap 是 "rate-limit 功能缺失"），两者应分别记录
 
 ### Step 6: Issues 深度分析
 
-- 逐条读取 top issues 正文（直接使用 Step 2 已获取并按 reactions 重排后的 issue 列表，**禁止在本步骤重新调用 Issues API**）
+- 逐条读取 top issues 正文（直接使用 Step 2 已获取并按 reactions 重排后的 issue 列表，**禁止在本步骤重新调用 Issues API**）；**每个 issue 的 `reactions.total_count` 必须从 Step 2 的响应数据中读取并记录**，Step 7 写库时填入 `issue_reactions` 字段（即使为 0 也必须显式填写，不可省略）
 - 跳过：issue 已有关联 PR — 判断方法：GitHub API `GET /repos/<project_id>/issues/<issue_number>/timeline?per_page=100`（需携带请求头 `Accept: application/vnd.github+json`；**必须使用 `requests.get(url, headers=HEADERS, params={"per_page": 100})` 传参，不可手动拼接 URL 查询字符串**），满足以下任一条件则视为已有关联 PR（`has_linked_pr = 1`），跳过该 issue：
   1. 存在 `event=cross-referenced` 且 `source.get("issue")` 不为 null 且 `source["issue"].get("pull_request")` 不为 null 的条目（注意：`source` 结构为 `{"type": "issue", "issue": {...}}`；当 `source["type"]` 不是 `"issue"` 时 `source["issue"]` 键可能不存在，必须用 `.get()` 防御；即使 `source["issue"]` 存在，其中的 `pull_request` 键也可能不存在（普通 issue cross-reference），同样必须用 `.get()` 防御，禁止直接用 `source["issue"]["pull_request"]`）
   2. 存在 `event=connected` 的条目（PR 通过 Development 侧边栏显式关联）
