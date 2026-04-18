@@ -8,3 +8,5 @@ data/*.db-wal
 data/*.db-shm
 # 进程互斥锁文件（运行时临时文件，不需要版本追踪）
 data/.pipeline.lock
+# LLM 运行时生成的临时执行脚本（决策已写入 DB，脚本本身无需版本追踪）
+scripts/
