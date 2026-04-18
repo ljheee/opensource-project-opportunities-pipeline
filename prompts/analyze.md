@@ -78,9 +78,9 @@ UPDATE projects SET status = 'analyzing'                        WHERE id = '<pro
 ### Step 3: 抓取原版信息
 
 - 若 `canonical_url` 为 NULL、空字符串、或非 URL 占位符（字符串值为 `"unknown"`、`"N/A"`、`"—"`、`"-"`、`"null"` 等，即不以 `http` 开头），跳过本步骤及 Step 4，`canonical_gap` 填 "canonical_url 未知，无法对比"，`peer_comparison` 填 "—"；此时 Step 7 中所有机会点的 `value_evidence.canonical_impl_url` 和 `difficulty_evidence.canonical_impl_url` **必须填空字符串 `""`**（不可填 canonical_url 本身或目标项目的文件 URL——scoring.py 以空字符串判定"无参考实现"，填入任何非空 URL 均会导致 value/difficulty 错误上调）
-- WebFetch `<canonical_url>` — 原版项目主页（含 README）
+- WebFetch `<canonical_url>` — 原版项目主页（含 README）；**若 WebFetch 超时或失败，不中止，改用 GitHub API 降级获取**：从 `canonical_url` 解析出 `<owner>/<repo>`，调用 `GET /repos/<owner>/<repo>/readme`（需携带 HEADERS）获取 README 内容（base64 解码后读取），以此替代 WebFetch 结果
 - 提取原版功能全集（feature matrix）：列出所有核心功能模块
-- **必须定位每个核心功能的实现文件**：对每个识别到的功能模块，调用 GitHub API `GET /repos/<canonical_owner>/<canonical_repo>/git/trees/HEAD?recursive=1` 获取目录结构，结合功能名称定位具体实现文件路径，构造文件 URL 格式为 `https://github.com/<canonical_owner>/<canonical_repo>/blob/main/<path/to/file>`（分支名不确定时用 `master` 重试）；**无法定位具体文件时才填空字符串**，不可直接填仓库首页 URL
+- **必须定位每个核心功能的实现文件**：调用 GitHub API `GET /repos/<canonical_owner>/<canonical_repo>/git/trees/HEAD?recursive=1`（需携带 HEADERS）获取完整目录结构；结合功能名称在 `tree` 数组中搜索路径含功能关键词的文件（如 `RateLimiter`、`CircuitBreaker`、`Scheduler`、`Cache`）；找到后构造文件 URL：`https://github.com/<owner>/<repo>/blob/main/<path>`（若 `main` 分支不存在，调用 `GET /repos/<owner>/<repo>` 读取 `default_branch` 字段后重试）；**无法定位具体文件时才填空字符串**，不可直接填仓库首页 URL
 
 ### Step 4: 横向对比其他语言版本
 
