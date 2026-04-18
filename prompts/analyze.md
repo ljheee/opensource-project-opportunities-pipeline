@@ -70,17 +70,18 @@ UPDATE projects SET status = 'analyzing'                        WHERE id = '<pro
 
 ### Step 2: 抓取目标项目信息
 
-- WebFetch `<url>` — 读取项目主页（含 README），提取功能列表
-- WebFetch `https://github.com/<project_id>/releases` — 读取 CHANGELOG/发布说明
+- GitHub API: `GET /repos/<project_id>/readme`（需携带 HEADERS）— 获取项目 README（响应中 `content` 字段为 base64 编码，用 `base64.b64decode(resp["content"]).decode("utf-8", errors="replace")` 解码）；提取功能列表
+- GitHub API: `GET /repos/<project_id>/releases?per_page=5`（需携带 HEADERS）— 读取最近 5 个发布说明
 - GitHub API: `GET /repos/<project_id>/issues?state=open&sort=comments&direction=desc&per_page=20`（需携带请求头 `Accept: application/vnd.github+json` 以确保响应包含 `reactions` 字段）— top 20 高讨论度 issue（Issues API 不支持 sort=reactions，用 comments 近似；拿到后按 `issue.get("reactions", {}).get("total_count", 0)` 降序重排，`reactions` 字段或 `total_count` 子字段缺失时视为 0）；**注意：GitHub Issues API 默认同时返回 issue 和 PR，需过滤掉含 `"pull_request"` 键的条目，只保留纯 issue**；**必须使用 `requests.get(url, headers=HEADERS, params={"state": "open", "sort": "comments", "direction": "desc", "per_page": 20})` 传参，不可手动拼接 URL 查询字符串**
 - GitHub API: `GET /repos/<project_id>/git/trees/HEAD?recursive=1` — 完整目录结构（若响应体中 `"truncated": true`，则只保留 `tree` 数组中 `path` 不含 `/` 的条目，即只保留根目录层级的条目——包括根目录下的文件（`type=blob`，如 `go.mod`、`README.md`）和根目录下的子目录名（`type=tree`，如 `src`、`pkg`、`cmd`），不包含子目录内容）；**必须使用 `requests.get(url, headers=HEADERS, params={"recursive": 1})` 传参**
 
 ### Step 3: 抓取原版信息
 
 - 若 `canonical_url` 为 NULL、空字符串、或非 URL 占位符（字符串值为 `"unknown"`、`"N/A"`、`"—"`、`"-"`、`"null"` 等，即不以 `http` 开头），跳过本步骤及 Step 4，`canonical_gap` 填 "canonical_url 未知，无法对比"，`peer_comparison` 填 "—"；此时 Step 7 中所有机会点的 `value_evidence.canonical_impl_url` 和 `difficulty_evidence.canonical_impl_url` **必须填空字符串 `""`**（不可填 canonical_url 本身或目标项目的文件 URL——scoring.py 以空字符串判定"无参考实现"，填入任何非空 URL 均会导致 value/difficulty 错误上调）
-- WebFetch `<canonical_url>` — 原版项目主页（含 README）；**若 WebFetch 超时或失败，不中止，改用 GitHub API 降级获取**：从 `canonical_url` 解析出 `<owner>/<repo>`，调用 `GET /repos/<owner>/<repo>/readme`（需携带 HEADERS）获取 README 内容（base64 解码后读取），以此替代 WebFetch 结果
-- 提取原版功能全集（feature matrix）：列出所有核心功能模块
-- **必须定位每个核心功能的实现文件**：调用 GitHub API `GET /repos/<canonical_owner>/<canonical_repo>/git/trees/HEAD?recursive=1`（需携带 HEADERS）获取完整目录结构；结合功能名称在 `tree` 数组中搜索路径含功能关键词的文件（如 `RateLimiter`、`CircuitBreaker`、`Scheduler`、`Cache`）；找到后构造文件 URL：`https://github.com/<owner>/<repo>/blob/main/<path>`（若 `main` 分支不存在，调用 `GET /repos/<owner>/<repo>` 读取 `default_branch` 字段后重试）；**无法定位具体文件时才填空字符串**，不可直接填仓库首页 URL
+- 从 `canonical_url` 解析出 `<canonical_owner>/<canonical_repo>`（如 `https://github.com/alibaba/Sentinel` → `alibaba/Sentinel`）
+- GitHub API: `GET /repos/<canonical_owner>/<canonical_repo>/readme`（需携带 HEADERS）— 获取原版 README（base64 解码），提取原版功能全集（feature matrix）
+- GitHub API: `GET /repos/<canonical_owner>/<canonical_repo>/git/trees/HEAD?recursive=1`（需携带 HEADERS）— 获取原版完整目录结构
+- **必须定位每个核心功能的实现文件**：在目录结构的 `tree` 数组中搜索路径含功能关键词的文件（如 `RateLimiter`、`CircuitBreaker`、`Scheduler`、`Cache`）；找到后读取 `default_branch`（调用 `GET /repos/<canonical_owner>/<canonical_repo>` 的 `default_branch` 字段）并构造文件 URL：`https://github.com/<canonical_owner>/<canonical_repo>/blob/<default_branch>/<path>`；**无法定位具体文件时才填空字符串**，不可直接填仓库首页 URL
 
 ### Step 4: 横向对比其他语言版本
 
