@@ -164,12 +164,13 @@ def score_value(ve: dict, signal: str) -> str:
         reactions = 0
 
     if not canonical_url:
-        base = "low"
+        # 无原版参照：高呼声 issue 仍可达 medium，welcoming 可再上调
+        base = "medium" if reactions >= REACTIONS_HIGH else "low"
     elif reactions >= REACTIONS_HIGH:
         # 原版有实现 + 高呼声 → high
         base = "high"
     else:
-        # 原版有实现，低呼声（无论是否有 peer）→ medium
+        # 原版有实现，低呼声 → medium
         base = "medium"
 
     if signal == "welcoming":
