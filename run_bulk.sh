@@ -126,6 +126,17 @@ if [ "$TOTAL" -eq 0 ]; then
   exit 0
 fi
 
+# 清理上次中断遗留的 pending/running 任务，避免叠加到本次 batch_size
+sqlite3 "$DB" "
+UPDATE projects SET status='bulk_pending'
+WHERE status='analyzing'
+  AND id IN (
+    SELECT project_id FROM tasks
+    WHERE task_date='$DATE' AND status IN ('pending','running')
+  );
+DELETE FROM tasks WHERE task_date='$DATE' AND status IN ('pending','running');
+"
+
 python3 "$STAGES/schedule.py" --mode bulk_first --batch-size "$BATCH_SIZE" || \
   echo "WARN: schedule.py 返回非零退出码，今日可能无调度任务，继续执行后续步骤。"
 
