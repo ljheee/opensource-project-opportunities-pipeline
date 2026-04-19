@@ -12,3 +12,5 @@ data/*.db-shm
 data/.pipeline.lock
 # LLM 运行时生成的临时执行脚本（决策已写入 DB，脚本本身无需版本追踪）
 scripts/
+stages/analyze.py
+stages/filter.py
