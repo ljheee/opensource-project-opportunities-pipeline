@@ -92,8 +92,7 @@ if [ "$FILTER_COUNT" -gt 0 ]; then
       break
     fi
     if echo "$CLI_TOOL" | grep -qE "cursor-agent|agent"; then
-      _FILTER_CONTENT=$(cat "$_FILTER_TMP")
-      eval "$CLI_TOOL" "$_FILTER_CONTENT" || {
+      eval "$CLI_TOOL" < "$_FILTER_TMP" || {
         echo "WARN: agent filter 返回非零退出码（round=$_filter_rounds），本轮跳过，剩余项目留待下次重试。"
         break
       }
@@ -154,8 +153,7 @@ sed \
   -e "s|ANALYSIS_DATE|$DATE|g" \
   "$PROMPTS/analyze.md" > "$_ANALYZE_TMP"
 if echo "$CLI_TOOL" | grep -qE "cursor-agent|agent"; then
-  _ANALYZE_CONTENT=$(cat "$_ANALYZE_TMP")
-  eval "$CLI_TOOL" "$_ANALYZE_CONTENT" || \
+  eval "$CLI_TOOL" < "$_ANALYZE_TMP" || \
     echo "WARN: agent analyze 返回非零退出码，部分任务可能未完成，继续执行评分和报告。"
 else
   eval "$CLI_TOOL" --print - < "$_ANALYZE_TMP" || \
