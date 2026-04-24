@@ -101,9 +101,6 @@ if [ "$FILTER_COUNT" -gt 0 ]; then
         break
       }
     fi
-      echo "WARN: claude filter 返回非零退出码（round=$_filter_rounds），本轮跳过，剩余项目留待下次重试。"
-      break
-    }
   done
   rm -f "$_FILTER_TMP"
 fi
