@@ -14,3 +14,10 @@ sqlite3 data/pipeline.db "
   ORDER BY a.overall_score DESC;
   "
 ```
+
+
+```
+sqlite3 data/pipeline.db "SELECT t.id, t.project_id, t.task_date, t.status, t.started_at, t.finished_at FROM tasks t WHERE t.status = 'done' ORDER BY t.finished_at DESC LIMIT 5;"
+
+sqlite3 data/pipeline.db "SELECT t.id,t.project_id,t.finished_at,COUNT(o.id) as opp_count,GROUP_CONCAT(DISTINCT o.source_type) as types,GROUP_CONCAT(DISTINCT o.value) as value_levels, SUM(CASE WHEN o.source_type = 'feature_gap' THEN 1 ELSE 0 END) as feature_gaps, SUM(CASE WHEN json_extract(o.value_evidence, '$.canonical_impl_url') != '' THEN 1 ELSE 0 END) as canon_ok FROM tasks t LEFT JOIN opportunities o ON o.project_id = t.project_id AND o.status = 'open' WHERE t.status = 'done' GROUP BY t.id, t.project_id, t.finished_at ORDER BY t.finished_at DESC LIMIT 10;"
+```
