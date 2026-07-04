@@ -36,14 +36,20 @@ LIMIT 100;
 3. **场景限制**：游戏专用框架；区块链/Web3 专用；K8s 基础设施层（非应用层组件）；IoT 专用平台
 4. **无法对应原版**：无法找到任何 Java/Python/C++/Scala 知名原版作为参照，即当前项目是原创实现
 
-**保留条件（filter_status = 'keep'）——以下四条必须同时满足：**
+**保留条件（filter_status = 'keep'）——以下三条必须同时满足：**
 
 1. **是移植版/替代实现**：当前项目是某个知名原版（Java/Python/C++/Scala）在其他语言的移植版、客户端或替代实现
-2. **有明确原版**：必须填写 `canonical_name`、`canonical_lang`、`canonical_url`；若无法确定，不得 keep，必须 skip
-3. **存在功能缺口**：原版功能集丰富，当前语言版本存在明显功能差距
-4. **有真实用户群体**：stars >= 300，有 open issues 活动
+2. **存在功能缺口或真实改进空间**：原版功能集更丰富，或当前项目自身存在明显 bug/性能/安全问题
+3. **有真实用户群体**：stars >= 300，有 open issues 活动
 
-> **重要**：`keep` 项目必须同时填写 `canonical_url`。如果无法确定原版 URL，不要 keep，直接 skip。
+**canonical 信息填写规则：**
+
+- 若能确定原版，尽量填写 `canonical_name`、`canonical_lang`、`canonical_url`、`canonical_stars`。
+- `peer_versions` 填写其他已知语言版本的 JSON 数组（无则填 NULL）。
+- **如果无法确定原版**，但项目明显是某领域的替代实现（如 SQL 构建器、actor 框架、cron 库等），仍可 `keep`，`canonical_*` 字段填 NULL。此时 Stage 4 主要产出 `issue` / `security` / `performance` 类机会点。
+- `feature_gap` 和 `compatibility` 类机会点需要 `canonical_url` 才能做对照；没有 `canonical_url` 时，不写这两类，只写不依赖原版对比的类型。
+
+> **注意**：`canonical_url` 不是 keep 的硬性门槛。它是 `feature_gap` / `compatibility` 的证据基础，不是 `issue` / `security` / `performance` 的必需品。
 
 ## 输出
 
@@ -90,7 +96,7 @@ WHERE id = '<id>' AND status = 'discovered';
   UPDATE project_meta SET filter_status = 'skip', filter_reason = 'fetch_failed', filtered_at = '<ISO8601 时间>' WHERE project_id = '<id>';
   UPDATE projects SET status = 'filtered_skip' WHERE id = '<id>' AND status = 'discovered';
   ```
-- **不确定时一律 skip**：无法确定是否为移植版、无法确定原版、或无法判断护城河时，不要保留。本流水线宁缺毋滥，错杀一个替代实现好过错误分析一百个原创项目。
+- **不确定是否为移植版/替代实现时一律 skip**：如果判断不了当前项目是不是某知名原版的其他语言实现，不要保留。但“确定是替代实现但叫不出原版名字”可以 keep，canonical_url 留空即可。
 - 每处理完一个项目立即写库，**必须在每个项目的两条 UPDATE 执行后立即调用 `conn.commit()`**，不要批量等待——Python `sqlite3` 的 `execute()` 不会自动持久化，未 commit 的写入在 `conn.close()` 时会被回滚丢失
 - **SQL 执行方式**：优先使用 Python `sqlite3` 模块的**参数化查询**（`conn.execute("UPDATE project_meta SET filter_status=? WHERE project_id=?", (status, pid))`），完全避免引号转义问题。只有在无法使用参数化查询时才手动拼接 SQL 字符串。
 - **SQL 单引号转义**（仅在必须字符串拼接时）：将所有文本字段（`filter_reason`、`canonical_name` 等）中的单引号 `'` 替换为 `''`（两个单引号）再嵌入 SQL，防止语法错误（如 `Cap'n Proto` → `Cap''n Proto`）

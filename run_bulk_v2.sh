@@ -110,32 +110,6 @@ else
   echo "[Filter] 无待过滤项目，跳过。"
 fi
 
-# Stage 3.5: 硬规则兜底 —— 任何 filter_status='keep' 但 canonical_url 为空的项目强制 skip
-# 这符合 design.md 5.1：keep 项目必须填写 canonical_url，否则不应进入分析队列。
-echo "[Filter] 硬规则兜底：检查 canonical_url 为空的 keep 项目..."
-sqlite3 "$DB" "
-UPDATE project_meta
-SET filter_status='skip',
-    filter_reason='无明确 canonical 原版（硬规则兜底）',
-    filtered_at='$(date -u +%Y-%m-%dT%H:%M:%S+00:00)'
-WHERE filter_status='keep'
-  AND (canonical_url IS NULL OR canonical_url = '');
-
-UPDATE projects
-SET status='filtered_skip'
-WHERE status='discovered'
-  AND id IN (
-      SELECT project_id FROM project_meta
-      WHERE filter_status='skip'
-        AND filter_reason LIKE '无明确 canonical 原版%'
-  );
-"
-HARD_SKIP_COUNT=$(sqlite3 "$DB" "
-  SELECT COUNT(*) FROM project_meta
-  WHERE filter_status='skip' AND filter_reason LIKE '无明确 canonical 原版%';
-")
-echo "[Filter] 硬规则兜底修正项目数: $HARD_SKIP_COUNT"
-
 # 主循环
 processed=0
 batch_num=0
