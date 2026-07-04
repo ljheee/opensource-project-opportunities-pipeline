@@ -9,6 +9,7 @@ REACTIONS_HIGH  = 5
 LOC_HIGH        = 500
 LOC_MEDIUM      = 200
 PR_AGE_DAYS     = 365
+PROJECT_ADOPTION_STARS = 500  # 认为项目具备基本 adoption 门槛的 star 数
 
 REJECT_KEYWORDS  = ["out of scope", "won't fix", "won\u2019t fix", "wontfix", "wont fix",
                     "by design", "not planned", "not in scope", "intentional"]
@@ -156,7 +157,22 @@ def _clean_url(raw) -> str:
     return s
 
 
-def score_value(ve: dict, signal: str) -> str:
+def _project_is_adopted(stars, canonical_url):
+    """判断项目是否具备基本 adoption/生态价值。
+
+    标准：
+    - stars >= PROJECT_ADOPTION_STARS，或
+    - 有已知的 canonical_url（说明是知名框架的移植/替代实现）
+    """
+    try:
+        if stars is not None and int(stars) >= PROJECT_ADOPTION_STARS:
+            return True
+    except (ValueError, TypeError):
+        pass
+    return bool(_clean_url(canonical_url))
+
+
+def score_value(ve: dict, signal: str, source_type: str = "", project_adopted: bool = False) -> str:
     canonical_url = _clean_url(ve.get("canonical_impl_url"))
     try:
         reactions = int(ve.get("issue_reactions") or 0)
@@ -175,6 +191,13 @@ def score_value(ve: dict, signal: str) -> str:
 
     if signal == "welcoming":
         base = LEVEL_UP[base]
+
+    # security 类若真实影响生产环境且项目具备 adoption，value 不应低于 medium
+    if source_type == "security" and project_adopted:
+        has_prod = _to_bool(ve.get("has_prod_signal"))
+        if has_prod and base == "low":
+            base = "medium"
+
     return base
 
 
@@ -235,11 +258,15 @@ def run():
 
     try:
         rows = conn.execute("""
-            SELECT id, source_type,
-                   value_evidence, difficulty_evidence,
-                   urgency_evidence, maintainer_evidence
-            FROM opportunities
-            WHERE value IS NULL AND status = 'open'
+            SELECT o.id, o.project_id, o.source_type,
+                   o.value_evidence, o.difficulty_evidence,
+                   o.urgency_evidence, o.maintainer_evidence,
+                   p.stars AS project_stars,
+                   m.canonical_url AS project_canonical_url
+            FROM opportunities o
+            JOIN projects p ON p.id = o.project_id
+            LEFT JOIN project_meta m ON m.project_id = o.project_id
+            WHERE o.value IS NULL AND o.status = 'open'
         """).fetchall()
 
         print(f"待评分机会点：{len(rows)} 个")
@@ -261,8 +288,11 @@ def run():
             if not isinstance(me, dict): me = {}
 
             try:
+                project_adopted = _project_is_adopted(
+                    row["project_stars"], row["project_canonical_url"]
+                )
                 signal     = score_maintainer_signal(me)
-                value      = score_value(ve, signal)
+                value      = score_value(ve, signal, row["source_type"] or "", project_adopted)
                 difficulty = score_difficulty(de)
                 urgency    = score_urgency(ue, row["source_type"] or "")
                 status     = "obsolete" if signal == "rejected" else "open"
