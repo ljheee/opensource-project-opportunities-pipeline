@@ -567,12 +567,18 @@ Search API：   30 req/minute  ← 每次搜索间隔 2s
    - IoT 专用平台
 
 4. 通过 → filter_status = keep
-   同时补充：canonical_name / canonical_url / peer_versions
+   补充 canonical 信息：canonical_name / canonical_lang / canonical_url / peer_versions
+   - 能确定原版时尽量填写，用于 feature_gap / compatibility 类机会点的跨语言对照。
+   - 无法确定原版 URL，但项目明显属于某类替代实现（如 SQL builder、actor 框架、cron 库等）时，仍可 keep，canonical_* 字段可留空。此时 Stage 4 主要产出 issue / security / performance 类机会点。
 ```
 
 **输出**：更新 `project_meta` 表的 `filter_status`、`filter_reason`、`filtered_at`；
-对 `keep` 项目同时填写 `canonical_name`、`canonical_url`、`peer_versions`；
+对 `keep` 项目尽量填写 `canonical_name`、`canonical_lang`、`canonical_url`、`canonical_stars`、`peer_versions`；
 将 `keep` 项目的 `projects.status` 更新为 `bulk_pending`。
+
+**canonical_url 的必要性说明**：
+- `feature_gap` 和 `compatibility` 类机会点依赖 `canonical_url` 抓取原版实现作为对照证据。
+- `issue`、`security`、`performance` 类机会点主要基于目标项目自身信息判断，不强制要求 `canonical_url`。
 
 ---
 
