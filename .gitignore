@@ -16,3 +16,9 @@ scripts/
 stages/analyze*.py
 stages/stage*.py
 stages/filter*.py
+
+# 运行日志
+*.log
+
+# LLM 生成的根目录临时分析脚本
+/run_analysis.py
