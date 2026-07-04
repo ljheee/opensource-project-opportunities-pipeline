@@ -327,6 +327,76 @@ def _make_why_hard(source_type: str, title: str, body: str | None,
     return "Hard because: " + "; ".join(reasons)
 
 
+_REJECT_KEYWORDS = [
+    "out of scope", "won't fix", "won’t fix", "wontfix", "wont fix",
+    "by design", "not planned", "not in scope", "intentional",
+]
+
+
+def _pr_rejection_comment(project_id: str, pr_number: int) -> str:
+    """Fetch PR comments/reviews and look for a maintainer rejection reason."""
+    try:
+        _, comments = gh_get(f"/repos/{project_id}/issues/{pr_number}/comments", params={"per_page": 20})
+        comments = comments if isinstance(comments, list) else []
+        _, reviews = gh_get(f"/repos/{project_id}/pulls/{pr_number}/comments", params={"per_page": 20})
+        reviews = reviews if isinstance(reviews, list) else []
+    except Exception:
+        return ""
+
+    for item in comments + reviews:
+        if not isinstance(item, dict):
+            continue
+        author_assoc = item.get("author_association", "")
+        if author_assoc not in ("OWNER", "MEMBER", "COLLABORATOR"):
+            continue
+        body = (item.get("body") or "").lower()
+        if any(kw in body for kw in _REJECT_KEYWORDS):
+            return (item.get("body") or "").strip()[:250]
+    return ""
+
+
+def _search_similar_prs(project_id: str, title: str) -> list[dict]:
+    """Search merged and closed/unmerged PRs related to an issue title."""
+    prs = []
+    # Use shorter title slice to leave room for search operators
+    keyword = title[:40].replace('"', '')
+
+    for state_filter in ["is:merged", "is:closed -is:merged"]:
+        search_q = f"repo:{project_id} is:pr {state_filter} {keyword}"
+        sc_s, search_res = gh_get("/search/issues", params={"q": search_q, "per_page": 3}, is_search=True)
+        if sc_s != 200 or not isinstance(search_res, dict):
+            continue
+        for item in search_res.get("items", [])[:3]:
+            if not isinstance(item, dict):
+                continue
+            pr_number = item.get("number")
+            pr_title = item.get("title", "")
+            created = item.get("created_at", "")
+            age = None
+            if created:
+                try:
+                    dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
+                    age = (datetime.now(timezone.utc) - dt).days
+                except Exception:
+                    pass
+
+            merged = state_filter == "is:merged"
+            maintainer_comment = ""
+            if not merged and pr_number:
+                maintainer_comment = _pr_rejection_comment(project_id, pr_number)
+
+            prs.append({
+                "number": pr_number,
+                "title": pr_title,
+                "merged": merged,
+                "url": f"https://github.com/{project_id}/pull/{pr_number}" if pr_number else "",
+                "age_days": age,
+                "maintainer_comment": maintainer_comment,
+            })
+
+    return prs[:5]
+
+
 def _rollback_task(conn: sqlite3.Connection, task_id: int, project_id: str, task_type: str):
     """Mark task skipped and return project to appropriate queue."""
     conn.execute("UPDATE tasks SET status='skipped', finished_at=? WHERE id=?", (now_utc(), task_id))
@@ -493,21 +563,7 @@ def analyze_project(conn: sqlite3.Connection, task: dict, dry_run: bool = False)
             if len(maintainer_responses) >= 2:
                 break
 
-        similar_prs = []
-        search_q = f"repo:{project_id} is:pr is:merged {title[:50]}"
-        sc_s, search_res = gh_get("/search/issues", params={"q": search_q, "per_page": 3}, is_search=True)
-        if sc_s == 200 and isinstance(search_res, dict):
-            for item in search_res.get("items", [])[:3]:
-                if isinstance(item, dict):
-                    created = item.get("created_at", "")
-                    age = None
-                    if created:
-                        try:
-                            dt = datetime.fromisoformat(created.replace("Z", "+00:00"))
-                            age = (datetime.now(timezone.utc) - dt).days
-                        except Exception:
-                            pass
-                    similar_prs.append({"title": item.get("title", ""), "merged": True, "age_days": age, "maintainer_comment": ""})
+        similar_prs = _search_similar_prs(project_id, title)
 
         maintainer_evidence = json.dumps({
             "similar_prs": similar_prs,

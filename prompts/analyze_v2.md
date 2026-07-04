@@ -153,6 +153,11 @@ ORDER BY o.project_id, o.source_type;
 
 ### maintainer_evidence
 
+`similar_prs` 包含两类历史 PR：
+
+- `merged: true`：曾经有人提交过类似功能并被合并 → 说明维护者欢迎这类贡献。
+- `merged: false`（关闭未合并）：说明维护者可能拒绝过类似方案。此时 `maintainer_comment` 会尽量抓取维护者的拒绝理由（如 "out of scope"、"won't fix"、"not planned"）。
+
 ```json
 {
   "similar_prs": [
@@ -171,6 +176,12 @@ ORDER BY o.project_id, o.source_type;
   ]
 }
 ```
+
+**判断规则**：
+- `merged=true` 且 `age_days < 365` → `welcoming`
+- `maintainer_comment` 含拒绝语义 → `rejected`
+- `welcome_labels` 非空 或 `maintainer_responses` 含正向表态 → `welcoming`
+- 两者冲突时，以最新（`age_days` 最小）的为准
 
 ## 输出操作
 
