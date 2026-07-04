@@ -335,6 +335,16 @@ _REJECT_KEYWORDS = [
 ]
 
 
+def _contains_phrase(text: str, phrase: str) -> bool:
+    """Word-boundary aware phrase match."""
+    if not text or not phrase:
+        return False
+    if not phrase.isascii():
+        return phrase in text
+    pattern = r'(?<!\w)' + re.escape(phrase) + r'(?!\w)'
+    return bool(re.search(pattern, text))
+
+
 def _pr_rejection_comment(project_id: str, pr_number: int) -> str:
     """Fetch PR comments/reviews and look for a maintainer rejection reason."""
     try:
@@ -352,7 +362,7 @@ def _pr_rejection_comment(project_id: str, pr_number: int) -> str:
         if author_assoc not in ("OWNER", "MEMBER", "COLLABORATOR"):
             continue
         body = (item.get("body") or "").lower()
-        if any(kw in body for kw in _REJECT_KEYWORDS):
+        if any(_contains_phrase(body, kw) for kw in _REJECT_KEYWORDS):
             return (item.get("body") or "").strip()[:250]
     return ""
 

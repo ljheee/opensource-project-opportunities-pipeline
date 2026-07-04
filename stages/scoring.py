@@ -243,10 +243,10 @@ def score_difficulty(de: dict) -> str:
         else:
             base = "high"  # 信息不足，保守处理
 
-    if has_hard:
-        base = LEVEL_UP[base]
     if has_easy and base != "low":
         base = {"high": "medium", "medium": "low", "low": "low"}[base]
+    if has_hard:
+        base = LEVEL_UP[base]
 
     return base
 

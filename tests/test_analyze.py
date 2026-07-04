@@ -175,6 +175,11 @@ class TestEvidenceHelpers(unittest.TestCase):
         # Regex captures from the last slash; leading slash yields the full path.
         self.assertEqual(analyze._find_approach_file([], "bug", "see /src/engine.go"), "src/engine.go")
 
+    def test_contains_phrase_word_boundary(self):
+        self.assertTrue(analyze._contains_phrase("this is out of scope", "out of scope"))
+        self.assertFalse(analyze._contains_phrase("this is out of scoped", "out of scope"))
+        self.assertFalse(analyze._contains_phrase("unintentional side effect", "intentional"))
+
     def test_find_approach_file_perf_fallback(self):
         paths = ["src/memory.go", "src/network.go"]
         self.assertEqual(analyze._find_approach_file(paths, "slow memory allocation", ""), "src/memory.go")
