@@ -77,6 +77,43 @@ def _matches_welcome(text: str) -> bool:
     return False
 
 
+def _extract_explicit_difficulty(why_hard):
+    """Parse explicit difficulty hints written by the LLM in why_hard.
+
+    Examples: "Hard because: ...", "Medium difficulty", "straightforward change".
+    Returns 'high', 'medium', 'low', or None.
+    """
+    if not why_hard:
+        return None
+    text = why_hard.lower()
+
+    high_hints = ["hard because", "high difficulty", "very difficult", "challenging"]
+    for hint in high_hints:
+        pattern = r'(?<!\w)' + re.escape(hint) + r'(?!\w)'
+        for m in re.finditer(pattern, text):
+            prefix = text[max(0, m.start() - 20):m.start()]
+            if not _NEGATION_RE.search(prefix):
+                return "high"
+
+    medium_hints = ["medium because", "moderate", "medium difficulty"]
+    for hint in medium_hints:
+        pattern = r'(?<!\w)' + re.escape(hint) + r'(?!\w)'
+        for m in re.finditer(pattern, text):
+            prefix = text[max(0, m.start() - 20):m.start()]
+            if not _NEGATION_RE.search(prefix):
+                return "medium"
+
+    low_hints = ["low because", "low difficulty", "straightforward", "simple change"]
+    for hint in low_hints:
+        pattern = r'(?<!\w)' + re.escape(hint) + r'(?!\w)'
+        for m in re.finditer(pattern, text):
+            prefix = text[max(0, m.start() - 20):m.start()]
+            if not _NEGATION_RE.search(prefix):
+                return "low"
+
+    return None
+
+
 def _to_bool(v) -> bool:
     """Coerce an evidence bool field to Python bool.
     LLM may write strings like 'unknown'/'unclear'/'maybe'/'possibly'/'partial' which should
@@ -201,8 +238,8 @@ def score_value(ve: dict, signal: str, source_type: str = "", project_adopted: b
     if signal == "welcoming":
         base = LEVEL_UP[base]
 
-    # security 类若真实影响生产环境且项目具备 adoption，value 不应低于 medium
-    if source_type == "security" and project_adopted:
+    # security / issue / performance 类若真实影响生产环境且项目具备 adoption，value 不应低于 medium
+    if source_type in ("security", "issue", "performance") and project_adopted:
         has_prod = _to_bool(ve.get("has_prod_signal"))
         if has_prod and base == "low":
             base = "medium"
@@ -221,6 +258,7 @@ def score_difficulty(de: dict) -> str:
 
     has_hard = _matches_any(why_hard, HARD_KEYWORDS)
     has_easy = _matches_any(why_hard, EASY_KEYWORDS)
+    explicit = _extract_explicit_difficulty(why_hard)
 
     if canonical_url:
         # loc=0 表示"未能确定行数"（analyze.md 规定无法确定时填 0），
@@ -235,11 +273,13 @@ def score_difficulty(de: dict) -> str:
         else:
             base = "low"
     else:
-        # 无 canonical 参考时，根据 why_hard / approach_file 做更细粒度判断
-        if has_hard:
+        # 无 canonical 参考时，根据 why_hard / approach_file / 显式提示做更细粒度判断
+        if has_hard or explicit == "high":
             base = "high"
-        elif has_easy or approach_file:
+        elif has_easy or approach_file or explicit == "medium":
             base = "medium"
+        elif explicit == "low":
+            base = "low"
         else:
             base = "high"  # 信息不足，保守处理
 
@@ -247,6 +287,14 @@ def score_difficulty(de: dict) -> str:
         base = {"high": "medium", "medium": "low", "low": "low"}[base]
     if has_hard:
         base = LEVEL_UP[base]
+
+    # LLM 在 why_hard 里写的显式难度提示（如 "Hard because"）是强信号
+    if explicit == "high":
+        base = LEVEL_UP[base]
+    elif explicit == "medium" and base == "low":
+        base = "medium"
+    elif explicit == "low" and base == "high":
+        base = "medium"
 
     return base
 
