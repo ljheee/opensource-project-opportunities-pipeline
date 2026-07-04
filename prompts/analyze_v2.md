@@ -66,6 +66,112 @@ ORDER BY o.project_id, o.source_type;
 5. **去重合并**
    - 同一个功能缺口如果同时以 `feature_gap` 和某个 `issue` 出现，合并为一条，保留更具体的 source_ref。
 
+## Evidence JSON 字段规范
+
+写回 DB 前，确保四个 `*_evidence` JSON 字段尽量包含以下信息。字段已有的就保留，缺失的请根据你读取到的上下文补充。
+
+### `issue` / `performance` / `security` / `compatibility` 通用 value_evidence
+
+```json
+{
+  "canonical_impl_url": "https://github.com/owner/repo/blob/main/... （原版对应实现文件，无则留空）",
+  "canonical_impl_loc": 320,
+  "peer_impl_urls": ["https://github.com/owner/repo/blob/main/..."],
+  "issue_reactions": 12,
+  "issue_count": 3,
+  "has_workaround": true,
+  "prod_signal_quote": "We hit this in production with 10k rps — issue #234",
+  "has_prod_signal": true,
+  "gap_desc": "一句话说明差距或问题本质"
+}
+```
+
+### `feature_gap` 专用 value_evidence
+
+```json
+{
+  "canonical_impl_url": "https://github.com/owner/repo/blob/main/...",
+  "canonical_impl_loc": 320,
+  "peer_impl_urls": ["https://github.com/owner/repo/blob/main/..."],
+  "target_has_stub": false,
+  "target_related_files": ["pkg/core/stat/"],
+  "feature_desc": "热点参数限流：按请求参数值独立计数",
+  "gap_desc": "sentinel-golang 只有全局 QPS，无 per-key 计数"
+}
+```
+
+### `security` 专用 value_evidence（替代上述通用结构）
+
+```json
+{
+  "cve_id": "CVE-2024-1234",
+  "vulnerable_dep": "golang.org/x/crypto v0.0.1",
+  "fixed_in_dep": "v0.3.0",
+  "canonical_fixed": true,
+  "peer_fixed": [{"lang": "Rust", "fixed": true}],
+  "affected_file": "pkg/transport/tls.go:42",
+  "affected_api": "tls.Config{InsecureSkipVerify: true}",
+  "attack_surface": "中间人攻击，影响所有 TLS 通信场景"
+}
+```
+
+### `compatibility` 专用 value_evidence（替代上述通用结构）
+
+```json
+{
+  "canonical_behavior_url": "https://github.com/owner/repo/blob/main/FlowRule.java#L89",
+  "target_behavior_file": "pkg/core/flow/rule.go:56",
+  "test_case_exists": false,
+  "issue_refs": ["#45", "#67"],
+  "has_workaround": false,
+  "canonical_behavior_desc": "Java 版滑动窗口，精度 500ms",
+  "target_behavior_desc": "Go 版固定窗口，边界有突刺",
+  "impact_desc": "边界时刻实际放行量可达限额 2 倍"
+}
+```
+
+### difficulty_evidence
+
+```json
+{
+  "canonical_impl_url": "https://github.com/owner/repo/blob/main/...",
+  "canonical_impl_loc": 320,
+  "why_hard": "Hard because: involves concurrency/locking; requires core data structure changes",
+  "target_approach_file": "pkg/core/stat/counter.go:15"
+}
+```
+
+### urgency_evidence
+
+```json
+{
+  "cve_id": "CVE-2024-1234",
+  "has_prod_signal": true,
+  "has_workaround": false
+}
+```
+
+### maintainer_evidence
+
+```json
+{
+  "similar_prs": [
+    {
+      "number": 42,
+      "title": "feat: add hotspot parameter flow control",
+      "merged": false,
+      "url": "https://github.com/owner/repo/pulls/42",
+      "age_days": 180,
+      "maintainer_comment": "out of scope for now"
+    }
+  ],
+  "welcome_labels": ["help wanted", "good first issue"],
+  "maintainer_responses": [
+    {"author_association": "OWNER", "body_quote": "PR welcome", "issue_number": 88}
+  ]
+}
+```
+
 ## 输出操作
 
 对确认保留的机会点执行：

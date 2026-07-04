@@ -180,6 +180,153 @@ def classify_issue(title: str, body: str | None) -> str:
     return "issue"
 
 
+# ── evidence enrichment helpers (toward design.md 5.5) ───────────────────────
+
+_STOP_WORDS = {
+    "this", "that", "with", "from", "have", "been", "they", "will", "would",
+    "could", "should", "there", "their", "what", "when", "where", "which",
+    "while", "about", "after", "before", "being", "between", "both", "into",
+    "through", "during", "above", "below", "under", "over", "then", "than",
+    "them", "these", "those", "here", "some", "only", "also", "just", "like",
+}
+
+_PROD_KEYWORDS = [
+    "in production", "production", "prod", "crash", "data loss", "outage",
+    "incident", "downtime", "production use", "real world", "real-world",
+]
+
+_PERF_KEYWORDS = ["perf", "performance", "bottleneck", "lock", "mutex", "memory",
+                  "cpu", "alloc", "allocation", "cache", "slow", "latency", "throughput"]
+
+
+def _extract_keywords(text: str) -> set[str]:
+    """Extract meaningful keywords from text for related-issue matching."""
+    words = re.findall(r"[a-z]{4,}", (text or "").lower())
+    return {w for w in words if w not in _STOP_WORDS}
+
+
+def _extract_quote_around_keyword(text: str, keyword: str, window: int = 100) -> str:
+    """Return a substring around the first occurrence of keyword."""
+    if not text:
+        return ""
+    idx = text.lower().find(keyword)
+    if idx < 0:
+        return ""
+    start = max(0, idx - window)
+    end = min(len(text), idx + len(keyword) + window)
+    return text[start:end].strip().replace("\n", " ")
+
+
+def _extract_prod_signal_quote(body: str, comments: list) -> tuple[str, bool]:
+    """Extract a production-signal quote from issue body/comments."""
+    for kw in _PROD_KEYWORDS:
+        quote = _extract_quote_around_keyword(body or "", kw, 120)
+        if quote:
+            return quote, True
+    for comment in comments:
+        if not isinstance(comment, dict):
+            continue
+        cbody = comment.get("body") or ""
+        for kw in _PROD_KEYWORDS:
+            quote = _extract_quote_around_keyword(cbody, kw, 120)
+            if quote:
+                return quote, True
+    return "", False
+
+
+def _count_related_issues(issues: list, title: str, body: str) -> int:
+    """Count other issues sharing at least 2 meaningful keywords."""
+    current = _extract_keywords(title + " " + (body or ""))
+    if not current:
+        return 0
+    count = 0
+    for issue in issues:
+        if not isinstance(issue, dict):
+            continue
+        issue_text = issue.get("title", "") + " " + (issue.get("body") or "")
+        issue_words = _extract_keywords(issue_text)
+        if len(current & issue_words) >= 2:
+            count += 1
+    return count
+
+
+def _find_related_paths(paths: list[str], keyword: str, max_results: int = 5) -> list[str]:
+    """Find target paths related to a keyword."""
+    if not keyword:
+        return []
+    keyword_lower = keyword.lower()
+    parts = [p for p in keyword_lower.replace("-", "_").replace("/", " ").split() if len(p) > 2]
+    related = []
+    for p in paths:
+        p_lower = p.lower()
+        if keyword_lower in p_lower:
+            related.append(p)
+        elif any(part in p_lower for part in parts):
+            related.append(p)
+        if len(related) >= max_results:
+            break
+    return related
+
+
+def _has_stub(paths: list[str], feature_name: str) -> bool:
+    """Check whether target project has any file/dir matching the feature name."""
+    fn_lower = feature_name.lower()
+    return any(fn_lower in p.lower() for p in paths)
+
+
+def _find_approach_file(target_paths: list[str], title: str, body: str) -> str:
+    """Try to identify a target source file related to an issue."""
+    text = (body or "") + " " + title
+    # Look for explicit file mentions
+    file_pattern = r"(?:^|/)([a-zA-Z0-9_\-/]+\.(?:go|rs|py|ts|js|java|scala|kt|cpp|c|h|hpp))"
+    matches = re.findall(file_pattern, text)
+    if matches:
+        return matches[0]
+    # Fallback to keyword matching
+    text_lower = text.lower()
+    for kw in _PERF_KEYWORDS:
+        if kw in text_lower:
+            related = _find_related_paths(target_paths, kw, 1)
+            if related:
+                return related[0]
+    return ""
+
+
+def _make_gap_desc(source_type: str, title: str, body: str | None = None,
+                   canonical_url: str | None = None) -> str:
+    """Generate a concise gap description for evidence JSON."""
+    if source_type == "feature_gap":
+        return ("The canonical implementation appears to have this feature, "
+                f"but the target project seems missing or incomplete: {title}")
+    if source_type == "compatibility":
+        return f"Behavior may differ from the canonical implementation: {title}"
+    if source_type == "security":
+        return f"Potential security concern reported: {title}"
+    if source_type == "performance":
+        return f"Potential performance issue reported: {title}"
+    return f"User-reported issue or requested improvement: {title}"
+
+
+def _make_why_hard(source_type: str, title: str, body: str | None,
+                   has_canonical: bool, approach_file: str = "") -> str:
+    """Generate a why_hard hint for difficulty_evidence."""
+    text = (title + " " + (body or "")).lower()
+    reasons = []
+    if any(w in text for w in ["concurrent", "thread", "mutex", "lock", "race", "atomic", "async"]):
+        reasons.append("involves concurrency/locking")
+    if any(w in text for w in ["core data structure", "data structure", "algorithm", "index"]):
+        reasons.append("may require core data structure or algorithm changes")
+    if any(w in text for w in ["language limitation", "not supported", "cannot", "unable"]):
+        reasons.append("may hit language/platform limitations")
+    if source_type == "performance" and approach_file:
+        reasons.append(f"likely needs careful profiling/changes around {approach_file}")
+    if not has_canonical:
+        reasons.append("no canonical reference implementation available for guidance")
+    if not reasons:
+        return "Implementation effort unclear without deeper investigation."
+    return "Hard because: " + "; ".join(reasons)
+
+
 def _rollback_task(conn: sqlite3.Connection, task_id: int, project_id: str, task_type: str):
     """Mark task skipped and return project to appropriate queue."""
     conn.execute("UPDATE tasks SET status='skipped', finished_at=? WHERE id=?", (now_utc(), task_id))
@@ -368,23 +515,36 @@ def analyze_project(conn: sqlite3.Connection, task: dict, dry_run: bool = False)
             "welcome_labels": welcome_labels,
         })
 
-        value_evidence = json.dumps({
-            "canonical_impl_url": "",
-            "peer_impl_urls": [],
-            "issue_reactions": reaction_count,
-        })
-        difficulty_evidence = json.dumps({
-            "canonical_impl_url": "",
-            "canonical_impl_loc": 0,
-            "why_hard": "",
-        })
+        prod_quote, has_prod = _extract_prod_signal_quote(body, comments)
+        body_lower = (body or "").lower()
+        has_workaround = any(w in body_lower for w in ["workaround", "work around", "as a workaround", "alternatively"])
         cve_id = None
         if source_type == "security":
             cve_m = re.search(r"CVE-\d{4}-\d+", title + " " + body)
             cve_id = cve_m.group(0) if cve_m else None
-        body_lower = (body or "").lower()
-        has_prod = any(w in body_lower for w in ["production", "prod", "crash", "data loss", "outage"])
-        has_workaround = any(w in body_lower for w in ["workaround", "work around", "as a workaround", "alternatively"])
+
+        issue_count = _count_related_issues(issues, title, body)
+        gap_desc = _make_gap_desc(source_type, title, body)
+        approach_file = _find_approach_file(target_paths, title, body) if source_type == "performance" else ""
+        why_hard = _make_why_hard(source_type, title, body, has_canonical=False, approach_file=approach_file)
+
+        value_evidence = json.dumps({
+            "canonical_impl_url": "",
+            "canonical_impl_loc": 0,
+            "peer_impl_urls": [],
+            "issue_reactions": reaction_count,
+            "issue_count": issue_count,
+            "has_workaround": has_workaround,
+            "prod_signal_quote": prod_quote,
+            "has_prod_signal": has_prod,
+            "gap_desc": gap_desc,
+        })
+        difficulty_evidence = json.dumps({
+            "canonical_impl_url": "",
+            "canonical_impl_loc": 0,
+            "why_hard": why_hard,
+            "target_approach_file": approach_file,
+        })
         urgency_evidence = json.dumps({
             "cve_id": cve_id,
             "has_prod_signal": has_prod,
@@ -408,14 +568,24 @@ def analyze_project(conn: sqlite3.Connection, task: dict, dry_run: bool = False)
     # Step 5: feature_gap opportunities
     feature_gap_opportunities = []
     for feat_name, feat_lang, feat_url in feature_gaps:
+        related_files = _find_related_paths(target_paths, feat_name, 5)
+        target_has_stub = _has_stub(target_paths, feat_name)
+        gap_desc = _make_gap_desc("feature_gap", feat_name)
+        why_hard = _make_why_hard("feature_gap", feat_name, "", has_canonical=True)
+
         merged = False
         for iopp in issue_opportunities:
             if feat_name.lower() in iopp["title"].lower() or feat_name.lower() in iopp["description"].lower():
                 ve = json.loads(iopp["value_evidence"])
                 ve["canonical_impl_url"] = feat_url
+                ve["target_related_files"] = related_files
+                ve["target_has_stub"] = target_has_stub
+                ve["feature_desc"] = feat_name
+                ve["gap_desc"] = gap_desc
                 iopp["value_evidence"] = json.dumps(ve)
                 de = json.loads(iopp["difficulty_evidence"])
                 de["canonical_impl_url"] = feat_url
+                de["why_hard"] = why_hard
                 iopp["difficulty_evidence"] = json.dumps(de)
                 merged = True
                 break
@@ -427,9 +597,26 @@ def analyze_project(conn: sqlite3.Connection, task: dict, dry_run: bool = False)
                 "description": f"The canonical {feat_lang} implementation has a '{feat_name}' module/feature that appears missing or incomplete here.",
                 "issue_number": None,
                 "issue_reactions": 0,
-                "value_evidence": json.dumps({"canonical_impl_url": feat_url, "peer_impl_urls": [], "issue_reactions": 0}),
-                "difficulty_evidence": json.dumps({"canonical_impl_url": feat_url, "canonical_impl_loc": 0, "why_hard": ""}),
-                "urgency_evidence": json.dumps({"cve_id": None, "has_prod_signal": False, "has_workaround": False}),
+                "value_evidence": json.dumps({
+                    "canonical_impl_url": feat_url,
+                    "canonical_impl_loc": 0,
+                    "peer_impl_urls": [],
+                    "issue_reactions": 0,
+                    "target_has_stub": target_has_stub,
+                    "target_related_files": related_files,
+                    "feature_desc": feat_name,
+                    "gap_desc": gap_desc,
+                }),
+                "difficulty_evidence": json.dumps({
+                    "canonical_impl_url": feat_url,
+                    "canonical_impl_loc": 0,
+                    "why_hard": why_hard,
+                }),
+                "urgency_evidence": json.dumps({
+                    "cve_id": None,
+                    "has_prod_signal": False,
+                    "has_workaround": False,
+                }),
                 "maintainer_evidence": json.dumps({"similar_prs": [], "maintainer_responses": [], "welcome_labels": []}),
                 "impl_hint": f"See canonical implementation: {feat_url}",
             })
