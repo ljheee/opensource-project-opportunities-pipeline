@@ -234,7 +234,7 @@ def _extract_prod_signal_quote(body: str, comments: list) -> tuple[str, bool]:
     return "", False
 
 
-def _count_related_issues(issues: list, title: str, body: str) -> int:
+def _count_related_issues(issues: list, title: str, body: str, exclude_number: int | None = None) -> int:
     """Count other issues sharing at least 2 meaningful keywords."""
     current = _extract_keywords(title + " " + (body or ""))
     if not current:
@@ -242,6 +242,8 @@ def _count_related_issues(issues: list, title: str, body: str) -> int:
     count = 0
     for issue in issues:
         if not isinstance(issue, dict):
+            continue
+        if exclude_number is not None and issue.get("number") == exclude_number:
             continue
         issue_text = issue.get("title", "") + " " + (issue.get("body") or "")
         issue_words = _extract_keywords(issue_text)
@@ -579,7 +581,7 @@ def analyze_project(conn: sqlite3.Connection, task: dict, dry_run: bool = False)
             cve_m = re.search(r"CVE-\d{4}-\d+", title + " " + body)
             cve_id = cve_m.group(0) if cve_m else None
 
-        issue_count = _count_related_issues(issues, title, body)
+        issue_count = _count_related_issues(issues, title, body, exclude_number=issue_num)
         gap_desc = _make_gap_desc(source_type, title, body)
         approach_file = _find_approach_file(target_paths, title, body) if source_type == "performance" else ""
         why_hard = _make_why_hard(source_type, title, body, has_canonical=False, approach_file=approach_file)

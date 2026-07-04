@@ -131,16 +131,27 @@ class TestEvidenceHelpers(unittest.TestCase):
         self.assertEqual(analyze._count_related_issues([], "title", "body"), 0)
 
     def test_count_related_issues_no_match(self):
-        issues = [{"title": "foo", "body": "bar"}]
+        issues = [{"number": 1, "title": "foo", "body": "bar"}]
         self.assertEqual(analyze._count_related_issues(issues, "memory allocation", "bug"), 0)
 
     def test_count_related_issues_match(self):
-        issues = [{"title": "memory leak", "body": "allocation failure"}]
+        issues = [{"number": 1, "title": "memory leak", "body": "allocation failure"}]
         self.assertEqual(analyze._count_related_issues(issues, "memory allocation", "bug"), 1)
 
     def test_count_related_issues_invalid_issue(self):
-        issues = ["not-a-dict", {"title": "memory leak", "body": ""}]
+        issues = ["not-a-dict", {"number": 1, "title": "memory leak", "body": ""}]
         self.assertEqual(analyze._count_related_issues(issues, "memory leak", ""), 1)
+
+    def test_count_related_issues_excludes_self(self):
+        issues = [{"number": 42, "title": "memory leak", "body": "allocation failure"}]
+        self.assertEqual(analyze._count_related_issues(issues, "memory leak", "", exclude_number=42), 0)
+
+    def test_count_related_issues_excludes_only_self(self):
+        issues = [
+            {"number": 42, "title": "memory leak", "body": "allocation failure"},
+            {"number": 43, "title": "memory allocation bug", "body": "leak detected"},
+        ]
+        self.assertEqual(analyze._count_related_issues(issues, "memory leak", "", exclude_number=42), 1)
 
     def test_find_related_paths_empty(self):
         self.assertEqual(analyze._find_related_paths([], "foo"), [])

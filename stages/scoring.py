@@ -14,9 +14,16 @@ PROJECT_ADOPTION_STARS = 500  # 认为项目具备基本 adoption 门槛的 star
 REJECT_KEYWORDS  = ["out of scope", "won't fix", "won\u2019t fix", "wontfix", "wont fix",
                     "by design", "not planned", "not in scope", "intentional"]
 WELCOME_KEYWORDS = ["pr welcome", "pull request welcome", "good first issue",
-                    "help wanted", "contributions welcome"]
+                    "help wanted", "contributions welcome",
+                    "happy to accept", "would welcome", "feel free to",
+                    "looking forward to", "not saying no", "sounds good",
+                    "please go ahead", "go ahead and"]
 HARD_KEYWORDS    = ["核心数据结构", "并发设计", "语言特性限制",
                     "core data structure", "concurrency", "language limitation"]
+EASY_KEYWORDS    = ["ui", "docs", "documentation", "example", "examples",
+                    "config", "configuration", "logging", "error message",
+                    "typo", "wording", "comment", "readme",
+                    "display", "font", "color", "placeholder", "validation message"]
 
 LEVEL_UP = {"low": "medium", "medium": "high", "high": "high"}
 
@@ -131,7 +138,9 @@ def score_maintainer_signal(me: dict) -> str:
         if _matches_any(body, REJECT_KEYWORDS):
             signals.append(("rejected", 0))
 
-    _WELCOME_LABELS = {"help wanted", "help-wanted", "good first issue", "good-first-issue"}
+    _WELCOME_LABELS = {"help wanted", "help-wanted", "good first issue", "good-first-issue",
+                       "enhancement", "feature-request", "feature request", "accepted",
+                       "pr welcome", "contributions welcome"}
     if any(isinstance(lbl, str) and lbl.lower() in _WELCOME_LABELS for lbl in welcome_labels):
         signals.append(("welcoming", 0))
 
@@ -207,24 +216,38 @@ def score_difficulty(de: dict) -> str:
         loc = int(de.get("canonical_impl_loc") or 0)
     except (ValueError, TypeError):
         loc = 0
-    why_hard      = (de.get("why_hard") or "").lower()
+    why_hard       = (de.get("why_hard") or "").lower()
+    approach_file  = (de.get("target_approach_file") or "").lower()
 
-    if not canonical_url:
-        return "high"
-    # loc=0 表示"未能确定行数"（analyze.md 规定无法确定时填 0），
-    # 不能当作"很短的实现"处理，保守地视为 medium。
-    # loc<0 属于无效值（LLM 写入错误），同样保守地视为 medium（未知行数）。
-    if loc <= 0:
-        base = "medium"
-    elif loc > LOC_HIGH:
-        base = "high"
-    elif loc >= LOC_MEDIUM:
-        base = "medium"
+    has_hard = _matches_any(why_hard, HARD_KEYWORDS)
+    has_easy = _matches_any(why_hard, EASY_KEYWORDS)
+
+    if canonical_url:
+        # loc=0 表示"未能确定行数"（analyze.md 规定无法确定时填 0），
+        # 不能当作"很短的实现"处理，保守地视为 medium。
+        # loc<0 属于无效值（LLM 写入错误），同样保守地视为 medium（未知行数）。
+        if loc <= 0:
+            base = "medium"
+        elif loc > LOC_HIGH:
+            base = "high"
+        elif loc >= LOC_MEDIUM:
+            base = "medium"
+        else:
+            base = "low"
     else:
-        base = "low"
+        # 无 canonical 参考时，根据 why_hard / approach_file 做更细粒度判断
+        if has_hard:
+            base = "high"
+        elif has_easy or approach_file:
+            base = "medium"
+        else:
+            base = "high"  # 信息不足，保守处理
 
-    if _matches_any(why_hard, HARD_KEYWORDS):
+    if has_hard:
         base = LEVEL_UP[base]
+    if has_easy and base != "low":
+        base = {"high": "medium", "medium": "low", "low": "low"}[base]
+
     return base
 
 
