@@ -106,6 +106,7 @@ CREATE INDEX IF NOT EXISTS idx_tasks_date_type      ON tasks(task_date, task_typ
 CREATE INDEX IF NOT EXISTS idx_tasks_project_status ON tasks(project_id, status);
 CREATE INDEX IF NOT EXISTS idx_projects_status      ON projects(status);
 CREATE INDEX IF NOT EXISTS idx_opps_value           ON opportunities(value);
+CREATE INDEX IF NOT EXISTS idx_opps_status          ON opportunities(status);
 CREATE INDEX IF NOT EXISTS idx_meta_filter_status   ON project_meta(filter_status);
 """
 
@@ -457,6 +458,16 @@ def _repair_skip_status_mismatch(conn: sqlite3.Connection):
               f"（project_meta.filter_status='skip' 但 projects.status='discovered'，已推进至 'filtered_skip'）.")
 
 
+def _migrate_opps_status_index(conn: sqlite3.Connection):
+    """为 opportunities.status 补加索引，加速 draft/open 状态查询。"""
+    exists = conn.execute(
+        "SELECT COUNT(*) FROM sqlite_master WHERE type='index' AND name='idx_opps_status'"
+    ).fetchone()[0]
+    if not exists:
+        conn.execute("CREATE INDEX idx_opps_status ON opportunities(status)")
+        print("DB migration: idx_opps_status added.")
+
+
 def init_db():
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH)
@@ -483,6 +494,8 @@ def init_db():
     _repair_filter_status_mismatch(conn)
     conn.commit()
     _repair_skip_status_mismatch(conn)
+    conn.commit()
+    _migrate_opps_status_index(conn)
     conn.commit()
     conn.close()
     print(f"DB initialized: {DB_PATH}")

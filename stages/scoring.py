@@ -239,7 +239,7 @@ def run():
                    value_evidence, difficulty_evidence,
                    urgency_evidence, maintainer_evidence
             FROM opportunities
-            WHERE value IS NULL
+            WHERE value IS NULL AND status = 'open'
         """).fetchall()
 
         print(f"待评分机会点：{len(rows)} 个")
