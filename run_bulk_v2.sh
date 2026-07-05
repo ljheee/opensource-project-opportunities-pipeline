@@ -180,8 +180,10 @@ while [ "$processed" -lt "$TOTAL_PROJECTS" ]; do
     echo "WARN: 本批没有任务变为 done，避免死循环，结束。"
     break
   fi
-  processed=$done_after
-  echo "[Batch $batch_num] Complete. Total done: $processed / $TOTAL_PROJECTS"
+  # 修复：processed 应该追踪本次运行处理的数量，而不是累计 done 数。
+  # 否则当累计 done 超过 TOTAL_PROJECTS 时，循环会提前退出。
+  processed=$((processed + done_after - done_before))
+  echo "[Batch $batch_num] Complete. This run: $processed / $TOTAL_PROJECTS; cumulative done: $done_after"
 done
 
 # Stage 4.5 + Stage 5
@@ -221,4 +223,4 @@ done
 [ "$_push_ok" -eq 0 ] && \
   echo "ERROR: git push 连续 3 次失败，请手动推送。"
 
-echo "=== Done === Processed $processed / $TOTAL_PROJECTS projects"
+echo "=== Done === Processed $processed / $TOTAL_PROJECTS projects in this run (cumulative done today: $done_after)"
