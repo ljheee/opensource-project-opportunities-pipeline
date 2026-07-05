@@ -21,9 +21,13 @@ from typing import Any
 
 try:
     import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
 except ImportError:
     subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "requests"])
     import requests
+    from requests.adapters import HTTPAdapter
+    from urllib3.util.retry import Retry
 
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "pipeline.db")
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
@@ -31,6 +35,19 @@ HEADERS = {"Accept": "application/vnd.github+json"}
 if GITHUB_TOKEN:
     HEADERS["Authorization"] = f"Bearer {GITHUB_TOKEN}"
 BASE_URL = "https://api.github.com"
+
+# ── HTTP session with resilient retry strategy ─────────────────────────────────
+_RETRY_STRATEGY = Retry(
+    total=5,
+    backoff_factor=1,  # 1s, 2s, 4s, 8s, 16s between retries
+    status_forcelist=[429, 500, 502, 503, 504],
+    allowed_methods={"GET", "HEAD", "OPTIONS"},
+    raise_on_status=False,
+)
+_HTTP_ADAPTER = HTTPAdapter(max_retries=_RETRY_STRATEGY)
+_SESSION = requests.Session()
+_SESSION.mount("https://", _HTTP_ADAPTER)
+_SESSION.mount("http://", _HTTP_ADAPTER)
 
 MAX_ISSUES = 15
 MAX_OPPORTUNITIES = 10
@@ -54,26 +71,37 @@ def now_utc() -> str:
 
 
 def gh_get(path: str, params: dict | None = None, is_search: bool = False):
-    """Call GitHub REST API with rate-limit retry. Returns (status_code, json_data)."""
+    """Call GitHub REST API with resilient retry and rate-limit handling.
+
+    Returns (status_code, json_data).
+    """
     url = BASE_URL + path if path.startswith("/") else path
-    for attempt in range(3):
-        try:
-            r = requests.get(url, headers=HEADERS, params=params, timeout=30)
-            if is_search:
-                time.sleep(2)
-            else:
-                time.sleep(1)
-            if r.status_code in (429, 403):
-                reset = int(r.headers.get("X-RateLimit-Reset", time.time() + 60))
-                wait = max(1, reset - int(time.time()))
-                print(f"  Rate limited, waiting {min(wait, 60)}s...")
-                time.sleep(min(wait, 60))
-                continue
-            return r.status_code, r.json() if r.content else {}
-        except Exception as e:
-            print(f"  Request error: {e}")
-            time.sleep(2)
-    return 0, {}
+    try:
+        r = _SESSION.get(url, headers=HEADERS, params=params, timeout=30)
+        # Be polite to GitHub: pause between requests; search endpoint is stricter.
+        time.sleep(3 if is_search else 2)
+
+        # Manual rate-limit handling based on X-RateLimit-Reset (more precise than backoff).
+        if r.status_code in (429, 403):
+            reset = int(r.headers.get("X-RateLimit-Reset", time.time() + 60))
+            wait = max(1, reset - int(time.time()))
+            print(f"  Rate limited, waiting {min(wait, 60)}s...")
+            time.sleep(min(wait, 60))
+            r = _SESSION.get(url, headers=HEADERS, params=params, timeout=30)
+
+        return r.status_code, r.json() if r.content else {}
+    except requests.exceptions.RetryError as e:
+        print(f"  Request failed after retries: {e}")
+        return 0, {}
+    except requests.exceptions.SSLError as e:
+        print(f"  SSL error: {e}")
+        return 0, {}
+    except requests.exceptions.ConnectionError as e:
+        print(f"  Connection error: {e}")
+        return 0, {}
+    except Exception as e:
+        print(f"  Request error: {e}")
+        return 0, {}
 
 
 def decode_readme(data: dict) -> str:
