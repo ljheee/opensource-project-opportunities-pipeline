@@ -110,6 +110,61 @@ else
   echo "[Filter] 无待过滤项目，跳过。"
 fi
 
+# 把之前遗留的 pending bulk_first 任务归到当天处理，避免脚本因当天无任务而直接退出
+sqlite3 "$DB" "
+  UPDATE tasks
+  SET task_date='$DATE'
+  WHERE task_type='bulk_first'
+    AND status='pending'
+    AND task_date < '$DATE';
+"
+
+# 先处理积压的 bulk_followup 任务（只需要 CLI judgment，不需要 analyze.py）
+echo ""
+echo "=== Processing bulk_followup tasks ==="
+_followup_processed=0
+while true; do
+  _FOLLOWUP_IDS=$(sqlite3 "$DB" "
+    SELECT id FROM tasks
+    WHERE task_type='bulk_followup'
+      AND status IN ('pending','running','analyzed')
+    ORDER BY task_date, id
+    LIMIT $BATCH_SIZE_PER_CLI;
+  ")
+
+  if [ -z "$_FOLLOWUP_IDS" ]; then
+    echo "No pending bulk_followup tasks."
+    break
+  fi
+
+  _FOLLOWUP_IDS_CSV=$(echo "$_FOLLOWUP_IDS" | tr '\n' ',' | sed 's/,$//')
+  echo "[bulk_followup] Task IDs: $_FOLLOWUP_IDS_CSV"
+
+  _ANALYZE_V2_TMP=$(mktemp)
+  sed \
+    -e "s|/path/to/pipeline/data/pipeline.db|$DB|g" \
+    -e "s|ANALYSIS_DATE|$DATE|g" \
+    -e "s|TASK_ID_LIST|$_FOLLOWUP_IDS_CSV|g" \
+    "$PROMPTS/analyze_v2.md" > "$_ANALYZE_V2_TMP"
+
+  if echo "$CLI_TOOL" | grep -qE "cursor-agent|agent"; then
+    eval "$CLI_TOOL" < "$_ANALYZE_V2_TMP" || \
+      echo "WARN: agent analyze_v2 返回非零退出码，部分任务可能未精炼。"
+  else
+    eval "$CLI_TOOL" --print - < "$_ANALYZE_V2_TMP" || \
+      echo "WARN: claude analyze_v2 返回非零退出码，部分任务可能未精炼。"
+  fi
+  rm -f "$_ANALYZE_V2_TMP"
+
+  _followup_processed=$((_followup_processed + 1))
+  # 简单防呆：如果连续几轮都没有状态变化，说明 judgment 没生效，退出
+  if [ "$_followup_processed" -gt 20 ]; then
+    echo "WARN: bulk_followup 已处理 20 轮，退出。"
+    break
+  fi
+  sleep 1
+done
+
 # 主循环
 processed=0
 batch_num=0
