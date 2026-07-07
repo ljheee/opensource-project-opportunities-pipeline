@@ -113,6 +113,7 @@ fi
 # 主循环
 processed=0
 batch_num=0
+done_after=0  # cumulative done counter, updated inside the loop; default for empty runs
 
 while [ "$processed" -lt "$TOTAL_PROJECTS" ]; do
   batch_num=$((batch_num + 1))
@@ -223,4 +224,4 @@ done
 [ "$_push_ok" -eq 0 ] && \
   echo "ERROR: git push 连续 3 次失败，请手动推送。"
 
-echo "=== Done === Processed $processed / $TOTAL_PROJECTS projects in this run (cumulative done today: $done_after)"
+echo "=== Done === Processed $processed / $TOTAL_PROJECTS projects in this run (cumulative done today: ${done_after:-0})"
