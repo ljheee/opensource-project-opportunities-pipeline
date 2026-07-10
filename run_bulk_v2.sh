@@ -110,16 +110,21 @@ else
   echo "[Filter] 无待过滤项目，跳过。"
 fi
 
-# 把之前遗留的 pending bulk_first 任务归到当天处理，避免脚本因当天无任务而直接退出
+# 把之前遗留的 pending bulk_first / bulk_followup 任务归到当天处理，避免脚本因当天无任务而直接退出
 sqlite3 "$DB" "
   UPDATE tasks
   SET task_date='$DATE'
   WHERE task_type='bulk_first'
     AND status='pending'
     AND task_date < '$DATE';
+  UPDATE tasks
+  SET task_date='$DATE'
+  WHERE task_type='bulk_followup'
+    AND status='pending'
+    AND task_date < '$DATE';
 "
 
-# 先处理积压的 bulk_followup 任务（只需要 CLI judgment，不需要 analyze.py）
+# 先处理积压的 bulk_followup 任务（现在与 bulk_first 一样：先 analyze.py 写 draft，再 analyze_v2.md 判断）
 echo ""
 echo "=== Processing bulk_followup tasks ==="
 _followup_processed=0
@@ -140,6 +145,13 @@ while true; do
   _FOLLOWUP_IDS_CSV=$(echo "$_FOLLOWUP_IDS" | tr '\n' ',' | sed 's/,$//')
   echo "[bulk_followup] Task IDs: $_FOLLOWUP_IDS_CSV"
 
+  # Step 1: Python 规则分析，生成 draft（bulk_followup 之前跳过这步，导致 analyze_v2.md 无 draft 可吃）
+  echo "[bulk_followup] Running stages/analyze.py..."
+  python3 "$STAGES/analyze.py" --date "$DATE" --task-ids "$_FOLLOWUP_IDS_CSV" || \
+    echo "WARN: analyze.py 返回非零退出码，部分 draft 可能未生成。"
+
+  # Step 2: CLI 复杂判断
+  echo "[bulk_followup] Running CLI judgment..."
   _ANALYZE_V2_TMP=$(mktemp)
   sed \
     -e "s|/path/to/pipeline/data/pipeline.db|$DB|g" \

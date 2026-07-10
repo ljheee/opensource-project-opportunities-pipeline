@@ -10,7 +10,7 @@ MAX_TASKS = {
     "incremental":   10,
     # bulk_first 数量由 CLI --batch-size 参数控制（run_bulk.sh 默认传 5），此处不设上限常量
     # （原 bulk_first=5 是死代码，gen_bulk_tasks 使用 args.batch_size 而非 MAX_TASKS['bulk_first']）
-    "bulk_followup": 3,
+    "bulk_followup": 200,
 }
 
 
