@@ -218,6 +218,7 @@ test -f "$PIPELINE_DIR/data/reports/$DATE.md" && \
 # v2 基础设施文件：stages/analyze.py 被 .gitignore 排除，需 force-add
 git -C "$PIPELINE_DIR" add -f "$PIPELINE_DIR/run_bulk_v2.sh" || true
 git -C "$PIPELINE_DIR" add -f "$PIPELINE_DIR/stages/analyze.py" || true
+git -C "$PIPELINE_DIR" add "$PIPELINE_DIR/stages/schedule.py" || true
 git -C "$PIPELINE_DIR" add "$PIPELINE_DIR/prompts/analyze_v2.md" || true
 git -C "$PIPELINE_DIR" diff --staged --quiet || \
   git -C "$PIPELINE_DIR" commit \
