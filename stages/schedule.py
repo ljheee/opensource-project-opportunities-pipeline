@@ -8,9 +8,10 @@ DB_PATH = os.path.join(os.path.dirname(__file__), '..', 'data', 'pipeline.db')
 MAX_TASKS = {
     "triggered":     None,
     "incremental":   10,
-    # bulk_first 数量由 CLI --batch-size 参数控制（run_bulk.sh 默认传 5），此处不设上限常量
-    # （原 bulk_first=5 是死代码，gen_bulk_tasks 使用 args.batch_size 而非 MAX_TASKS['bulk_first']）
-    "bulk_followup": 200,
+    # bulk_first / bulk_followup 数量统一由 CLI --batch-size 控制：
+    # gen_bulk_tasks 先用 batch_size 排 A 类（anchor/ecosystem），余量
+    # （batch_size - A 类实际排出数）交给 gen_bulk_followup_tasks 排 B 类。
+    # 每日总处理量由 run_bulk_v2.sh 的 TOTAL_PROJECTS 兜底，此处不再设独立常量。
 }
 
 
@@ -194,13 +195,12 @@ def gen_bulk_tasks(conn, date, batch_size, dry_run) -> int:
 
 
 def gen_bulk_followup_tasks(conn, date, batch_size, dry_run) -> int:
-    """Priority 4: B 类（非 anchor/ecosystem）bulk_followup 任务，仅在无 bulk_first 时触发。"""
-    # 只有今日还有未完成的 bulk_first 任务时才跳过 bulk_followup；
-    # 若 bulk_first 任务全部 done/skipped，说明 A 类项目已处理完，可以开始 B 类
-    existing = conn.execute(
-        "SELECT COUNT(*) FROM tasks WHERE task_date=? AND task_type='bulk_first' AND status IN ('pending','running')", (date,)
-    ).fetchone()[0]
-    if existing > 0:
+    """Priority 4: B 类（非 anchor/ecosystem）bulk_followup 任务，作为 A 类补齐。
+
+    调用方传入本批剩余名额（batch_size - 已排 A 类数）：余量为 0 表示本批
+    已被 A 类占满，B 类本轮不排；A 类耗尽后余量等于 batch_size，B 类全力排。
+    """
+    if batch_size <= 0:
         return 0
     cur = conn.execute("""
         SELECT p.id
@@ -254,7 +254,8 @@ def main():
             n = gen_bulk_tasks(conn, date, args.batch_size, args.dry_run)
             print(f"bulk_first:     {n}")
             total += n
-            n = gen_bulk_followup_tasks(conn, date, MAX_TASKS['bulk_followup'], args.dry_run)
+            # A 类未填满本批名额时，余量用 B 类补齐；A 类耗尽则全量排 B 类
+            n = gen_bulk_followup_tasks(conn, date, args.batch_size - n, args.dry_run)
             print(f"bulk_followup:  {n}")
             total += n
 

@@ -110,74 +110,17 @@ else
   echo "[Filter] 无待过滤项目，跳过。"
 fi
 
-# 把之前遗留的 pending bulk_first / bulk_followup 任务归到当天处理，避免脚本因当天无任务而直接退出
+# 把跨天遗留的 bulk 任务（pending/running/analyzed）归到当天，统一交给主循环处理。
+# 这样主循环无需关心跨天残留：A 类优先、B 类补齐的调度都在当天闭环。
 sqlite3 "$DB" "
   UPDATE tasks
   SET task_date='$DATE'
-  WHERE task_type='bulk_first'
-    AND status='pending'
-    AND task_date < '$DATE';
-  UPDATE tasks
-  SET task_date='$DATE'
-  WHERE task_type='bulk_followup'
-    AND status='pending'
+  WHERE task_type IN ('bulk_first','bulk_followup')
+    AND status IN ('pending','running','analyzed')
     AND task_date < '$DATE';
 "
 
-# 先处理积压的 bulk_followup 任务（现在与 bulk_first 一样：先 analyze.py 写 draft，再 analyze_v2.md 判断）
-echo ""
-echo "=== Processing bulk_followup tasks ==="
-_followup_processed=0
-while true; do
-  _FOLLOWUP_IDS=$(sqlite3 "$DB" "
-    SELECT id FROM tasks
-    WHERE task_type='bulk_followup'
-      AND status IN ('pending','running','analyzed')
-    ORDER BY task_date, id
-    LIMIT $BATCH_SIZE_PER_CLI;
-  ")
-
-  if [ -z "$_FOLLOWUP_IDS" ]; then
-    echo "No pending bulk_followup tasks."
-    break
-  fi
-
-  _FOLLOWUP_IDS_CSV=$(echo "$_FOLLOWUP_IDS" | tr '\n' ',' | sed 's/,$//')
-  echo "[bulk_followup] Task IDs: $_FOLLOWUP_IDS_CSV"
-
-  # Step 1: Python 规则分析，生成 draft（bulk_followup 之前跳过这步，导致 analyze_v2.md 无 draft 可吃）
-  echo "[bulk_followup] Running stages/analyze.py..."
-  python3 "$STAGES/analyze.py" --date "$DATE" --task-ids "$_FOLLOWUP_IDS_CSV" || \
-    echo "WARN: analyze.py 返回非零退出码，部分 draft 可能未生成。"
-
-  # Step 2: CLI 复杂判断
-  echo "[bulk_followup] Running CLI judgment..."
-  _ANALYZE_V2_TMP=$(mktemp)
-  sed \
-    -e "s|/path/to/pipeline/data/pipeline.db|$DB|g" \
-    -e "s|ANALYSIS_DATE|$DATE|g" \
-    -e "s|TASK_ID_LIST|$_FOLLOWUP_IDS_CSV|g" \
-    "$PROMPTS/analyze_v2.md" > "$_ANALYZE_V2_TMP"
-
-  if echo "$CLI_TOOL" | grep -qE "cursor-agent|agent"; then
-    eval "$CLI_TOOL" < "$_ANALYZE_V2_TMP" || \
-      echo "WARN: agent analyze_v2 返回非零退出码，部分任务可能未精炼。"
-  else
-    eval "$CLI_TOOL" --print - < "$_ANALYZE_V2_TMP" || \
-      echo "WARN: claude analyze_v2 返回非零退出码，部分任务可能未精炼。"
-  fi
-  rm -f "$_ANALYZE_V2_TMP"
-
-  _followup_processed=$((_followup_processed + 1))
-  # 简单防呆：如果连续几轮都没有状态变化，说明 judgment 没生效，退出
-  if [ "$_followup_processed" -gt 20 ]; then
-    echo "WARN: bulk_followup 已处理 20 轮，退出。"
-    break
-  fi
-  sleep 1
-done
-
-# 主循环
+# 主循环（统一处理 bulk_first / bulk_followup：A 类优先，B 类补齐）
 processed=0
 batch_num=0
 done_after=0  # cumulative done counter, updated inside the loop; default for empty runs
@@ -193,21 +136,23 @@ while [ "$processed" -lt "$TOTAL_PROJECTS" ]; do
   echo ""
   echo "=== Batch $batch_num (target $this_batch_size, processed $processed/$TOTAL_PROJECTS) ==="
 
-  # 统计当前已完成的 bulk_first 任务数
-  done_before=$(sqlite3 "$DB" "SELECT COUNT(*) FROM tasks WHERE task_date='$DATE' AND task_type='bulk_first' AND status='done';")
+  # 统计当前已完成的 bulk 任务数（bulk_first + bulk_followup）
+  done_before=$(sqlite3 "$DB" "SELECT COUNT(*) FROM tasks WHERE task_date='$DATE' AND task_type IN ('bulk_first','bulk_followup') AND status='done';")
 
   # 调度本批任务
   echo "[Batch $batch_num] Scheduling up to $this_batch_size projects..."
   python3 "$STAGES/schedule.py" --mode bulk_first --batch-size "$this_batch_size" || \
     echo "WARN: schedule.py 返回非零退出码。"
 
-  # 获取本批要处理的任务 ID（pending/running/analyzed 的 bulk_first）
+  # 获取本批要处理的任务 ID（pending/running/analyzed 的 bulk_first / bulk_followup，A 类优先）
   TASK_IDS=$(sqlite3 "$DB" "
     SELECT id FROM tasks
     WHERE task_date='$DATE'
-      AND task_type='bulk_first'
+      AND task_type IN ('bulk_first','bulk_followup')
       AND status IN ('pending','running','analyzed')
-    ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'running' THEN 1 ELSE 2 END, id
+    ORDER BY CASE task_type WHEN 'bulk_first' THEN 0 ELSE 1 END,
+             CASE status WHEN 'pending' THEN 0 WHEN 'running' THEN 1 ELSE 2 END,
+             id
     LIMIT $this_batch_size;
   ")
 
@@ -243,7 +188,7 @@ while [ "$processed" -lt "$TOTAL_PROJECTS" ]; do
   fi
   rm -f "$_ANALYZE_V2_TMP"
 
-  done_after=$(sqlite3 "$DB" "SELECT COUNT(*) FROM tasks WHERE task_date='$DATE' AND task_type='bulk_first' AND status='done';")
+  done_after=$(sqlite3 "$DB" "SELECT COUNT(*) FROM tasks WHERE task_date='$DATE' AND task_type IN ('bulk_first','bulk_followup') AND status='done';")
   if [ "$done_after" -eq "$done_before" ]; then
     echo "WARN: 本批没有任务变为 done，避免死循环，结束。"
     break
