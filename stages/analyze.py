@@ -507,9 +507,12 @@ def analyze_project(conn: sqlite3.Connection, task: dict, dry_run: bool = False)
     releases = releases if isinstance(releases, list) else []
     latest_release = releases[0].get("tag_name", "") if releases else ""
 
+    # 候选窗口取 50（而非 20）：PR 密集的项目里 top-N-by-comments 会被 PR 挤占，
+    # 真 issue 挤不进窗口（实测 llama-swap top-20 中 16 个是 PR）。先过滤 PR 再
+    # 排序截取，保证候选池里有足够的真 issue。窗口放大不增加请求数（仍 1 次）。
     sc3, issues_raw = gh_get(
         f"/repos/{project_id}/issues",
-        params={"state": "open", "sort": "comments", "direction": "desc", "per_page": 20},
+        params={"state": "open", "sort": "comments", "direction": "desc", "per_page": 50},
     )
     if sc3 not in (200, 404):
         print(f"  ERROR: issues fetch failed ({sc3})")
