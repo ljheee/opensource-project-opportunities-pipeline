@@ -60,6 +60,17 @@ git -C "$PIPELINE_DIR" pull --rebase || \
 
 python3 "$STAGES/init_db.py"
 
+# 把跨天遗留的 bulk 任务（pending/running/analyzed）归到当天，统一交给主循环处理。
+# 必须在 reset 块之前执行：否则跨天 analyzed 任务（task_date 仍是昨天）无法被
+# reset 块的 "task_date='今天' AND status='analyzed'" 识别，项目会被误降级为 bulk_pending。
+sqlite3 "$DB" "
+  UPDATE tasks
+  SET task_date='$DATE'
+  WHERE task_type IN ('bulk_first','bulk_followup')
+    AND status IN ('pending','running','analyzed')
+    AND task_date < '$DATE';
+"
+
 # 重置上次中断卡在 analyzing 状态的项目。
 # v2 特殊处理：若项目对应任务为 'analyzed'（等待 CLI 判断），保持 analyzing 状态，
 # 这样本次循环可以继续把它们交给 CLI。
@@ -109,16 +120,6 @@ if [ "$FILTER_COUNT" -gt 0 ]; then
 else
   echo "[Filter] 无待过滤项目，跳过。"
 fi
-
-# 把跨天遗留的 bulk 任务（pending/running/analyzed）归到当天，统一交给主循环处理。
-# 这样主循环无需关心跨天残留：A 类优先、B 类补齐的调度都在当天闭环。
-sqlite3 "$DB" "
-  UPDATE tasks
-  SET task_date='$DATE'
-  WHERE task_type IN ('bulk_first','bulk_followup')
-    AND status IN ('pending','running','analyzed')
-    AND task_date < '$DATE';
-"
 
 # 主循环（统一处理 bulk_first / bulk_followup：A 类优先，B 类补齐）
 processed=0
