@@ -170,7 +170,7 @@ while [ "$processed" -lt "$TOTAL_PROJECTS" ]; do
   python3 "$STAGES/analyze.py" --date "$DATE" --task-ids "$TASK_IDS_CSV" || \
     echo "WARN: analyze.py 返回非零退出码，部分 draft 可能未生成。"
 
-  # Step 2: CLI 复杂判断
+  # Step 2: CLI 复杂判断（瞬时连接错误重试：第 1 次失败后等 60s，第 2 次失败后等 180s，共 3 次尝试）
   echo "[Batch $batch_num] Running CLI judgment..."
   _ANALYZE_V2_TMP=$(mktemp)
   sed \
@@ -179,13 +179,24 @@ while [ "$processed" -lt "$TOTAL_PROJECTS" ]; do
     -e "s|TASK_ID_LIST|$TASK_IDS_CSV|g" \
     "$PROMPTS/analyze_v2.md" > "$_ANALYZE_V2_TMP"
 
-  if echo "$CLI_TOOL" | grep -qE "cursor-agent|agent"; then
-    eval "$CLI_TOOL" < "$_ANALYZE_V2_TMP" || \
-      echo "WARN: agent analyze_v2 返回非零退出码，部分任务可能未精炼。"
-  else
-    eval "$CLI_TOOL" --print - < "$_ANALYZE_V2_TMP" || \
-      echo "WARN: claude analyze_v2 返回非零退出码，部分任务可能未精炼。"
-  fi
+  _JUDGE_BACKOFFS=(60 180)   # 第 1 次重试前等 60s，第 2 次重试前等 180s
+  _judge_attempt=0
+  _judge_ok=0
+  while [ "$_judge_attempt" -le "${#_JUDGE_BACKOFFS[@]}" ]; do
+    _judge_attempt=$((_judge_attempt + 1))
+    [ "$_judge_attempt" -gt 1 ] && echo "[Batch $batch_num] CLI judgment 第 $_judge_attempt 次尝试..."
+    if echo "$CLI_TOOL" | grep -qE "cursor-agent|agent"; then
+      if eval "$CLI_TOOL" < "$_ANALYZE_V2_TMP"; then _judge_ok=1; break; fi
+    else
+      if eval "$CLI_TOOL" --print - < "$_ANALYZE_V2_TMP"; then _judge_ok=1; break; fi
+    fi
+    if [ "$_judge_attempt" -le "${#_JUDGE_BACKOFFS[@]}" ]; then
+      _wait=${_JUDGE_BACKOFFS[$((_judge_attempt - 1))]}
+      echo "WARN: analyze_v2 第 $_judge_attempt 次失败（退出码非零），${_wait}s 后重试..."
+      sleep "$_wait"
+    fi
+  done
+  [ "$_judge_ok" -eq 0 ] && echo "WARN: claude analyze_v2 重试 $(( ${#_JUDGE_BACKOFFS[@]} + 1 )) 次仍失败，部分任务可能未精炼。"
   rm -f "$_ANALYZE_V2_TMP"
 
   done_after=$(sqlite3 "$DB" "SELECT COUNT(*) FROM tasks WHERE task_date='$DATE' AND task_type IN ('bulk_first','bulk_followup') AND status='done';")
