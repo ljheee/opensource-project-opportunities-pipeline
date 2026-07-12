@@ -22,3 +22,10 @@ stages/filter*.py
 
 # LLM 生成的根目录临时分析脚本
 /run_analysis.py
+/process_*.py
+/process_*_data.json
+/task_*_eval.json
+/test_write*.py
+
+# Claude Code 本地配置（含个人权限设置，不入库）
+/.claude/
