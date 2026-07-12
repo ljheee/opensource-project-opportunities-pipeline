@@ -10,7 +10,7 @@
 /path/to/pipeline/data/pipeline.db
 ```
 
-（运行时由 `run_bulk_v2.sh` 替换为绝对路径）
+（运行时由 `run.sh` / `run_bulk_v2.sh` 替换为绝对路径）
 
 ## 今日日期
 

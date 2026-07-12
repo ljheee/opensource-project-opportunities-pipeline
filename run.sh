@@ -57,10 +57,21 @@ git -C "$PIPELINE_DIR" pull --rebase || \
 # 初始化 DB（幂等）
 python3 "$STAGES/init_db.py"
 
+# 把跨天遗留的任务（pending/running/analyzed）归到当天，统一交给本次运行处理。
+# 必须在 reset 块之前执行：否则跨天 analyzed 任务（task_date 仍是昨天）无法被
+# reset 块的 "task_date='今天' AND status='analyzed'" 识别，项目会被误降级为 bulk_pending。
+sqlite3 "$DB" "
+  UPDATE tasks
+  SET task_date='$DATE'
+  WHERE status IN ('pending','running','analyzed')
+    AND task_date < '$DATE';
+"
+
 # 将上次中途崩溃卡在 analyzing 状态的项目重置，使其可被重新调度
 # 优先级1：有已完成任务的项目 → 曾经是 active，重置回 active
 # 优先级2：有 triggered/incremental 类型任务（task_type 说明原本是 active）→ 重置回 active
-# 优先级3：其余（bulk_first/bulk_followup）→ 首次分析未完成，重置回 bulk_pending
+# 优先级3：任务为 analyzed（等待 CLI 判断）→ 保持 analyzing，本次运行继续交给 CLI
+# 优先级4：其余 → 首次分析未完成，重置回 bulk_pending
 sqlite3 "$DB" "
 UPDATE projects SET status='active'
 WHERE status='analyzing'
@@ -72,7 +83,10 @@ WHERE status='analyzing'
       WHERE task_type IN ('triggered','incremental')
   );
 UPDATE projects SET status='bulk_pending'
-WHERE status='analyzing';
+WHERE status='analyzing'
+  AND id NOT IN (
+      SELECT DISTINCT project_id FROM tasks WHERE task_date='$DATE' AND status='analyzed'
+  );
 "
 
 # 2. Stage 3: 语义过滤（先过滤，过滤后重新调度，再检查任务数）
@@ -114,8 +128,9 @@ python3 "$STAGES/schedule.py" --mode incremental || \
   echo "WARN: schedule.py 返回非零退出码，今日可能无调度任务，继续执行后续步骤。"
 
 # 检查今日是否有待分析任务（过滤+调度完成后再检查）
+# analyzed 状态的任务（等待 CLI 判断）也需要继续处理
 PENDING=$(sqlite3 "$DB" \
-  "SELECT COUNT(*) FROM tasks WHERE task_date='$DATE' AND status IN ('pending','running');")
+  "SELECT COUNT(*) FROM tasks WHERE task_date='$DATE' AND status IN ('pending','running','analyzed');")
 
 if [ "$PENDING" -eq 0 ]; then
   echo "今日无待分析任务，仍执行评分和报告生成。"
@@ -145,21 +160,54 @@ fi
 
 echo "今日待分析任务：$PENDING 个"
 
-# 3. Stage 4: 深层分析
+# 3. Stage 4: 深层分析（v2 两阶段：analyze.py 规则 draft → analyze_v2.md LLM 精炼）
 echo "[3/5] Stage 4: 深层分析 ($PENDING 个任务)..."
-_ANALYZE_TMP=$(mktemp)
+
+TASK_IDS=$(sqlite3 "$DB" "
+  SELECT id FROM tasks
+  WHERE task_date='$DATE'
+    AND status IN ('pending','running','analyzed')
+  ORDER BY CASE task_type WHEN 'bulk_first' THEN 0 WHEN 'bulk_followup' THEN 1 ELSE 2 END,
+           CASE status WHEN 'pending' THEN 0 WHEN 'running' THEN 1 ELSE 2 END,
+           id;
+")
+TASK_IDS_CSV=$(echo "$TASK_IDS" | tr '\n' ',' | sed 's/,$//')
+echo "[3/5] Task IDs: $TASK_IDS_CSV"
+
+# Step 1: Python 规则分析，生成 draft
+echo "[3/5] Running stages/analyze.py..."
+python3 "$STAGES/analyze.py" --date "$DATE" --task-ids "$TASK_IDS_CSV" || \
+  echo "WARN: analyze.py 返回非零退出码，部分 draft 可能未生成。"
+
+# Step 2: CLI 复杂判断（瞬时连接错误重试：第 1 次失败后等 60s，第 2 次失败后等 180s，共 3 次尝试）
+echo "[3/5] Running CLI judgment..."
+_ANALYZE_V2_TMP=$(mktemp)
 sed \
   -e "s|/path/to/pipeline/data/pipeline.db|$DB|g" \
   -e "s|ANALYSIS_DATE|$DATE|g" \
-  "$PROMPTS/analyze.md" > "$_ANALYZE_TMP"
-if echo "$CLI_TOOL" | grep -qE "cursor-agent|agent"; then
-  eval "$CLI_TOOL" < "$_ANALYZE_TMP" || \
-    echo "WARN: agent analyze 返回非零退出码，部分任务可能未完成，继续执行评分和报告。"
-else
-  eval "$CLI_TOOL" --print - < "$_ANALYZE_TMP" || \
-    echo "WARN: claude analyze 返回非零退出码，部分任务可能未完成，继续执行评分和报告。"
-fi
-rm -f "$_ANALYZE_TMP"
+  -e "s|TASK_ID_LIST|$TASK_IDS_CSV|g" \
+  "$PROMPTS/analyze_v2.md" > "$_ANALYZE_V2_TMP"
+
+_JUDGE_BACKOFFS=(60 180)   # 第 1 次重试前等 60s，第 2 次重试前等 180s
+_judge_attempt=0
+_judge_ok=0
+while [ "$_judge_attempt" -le "${#_JUDGE_BACKOFFS[@]}" ]; do
+  _judge_attempt=$((_judge_attempt + 1))
+  [ "$_judge_attempt" -gt 1 ] && echo "[3/5] CLI judgment 第 $_judge_attempt 次尝试..."
+  if echo "$CLI_TOOL" | grep -qE "cursor-agent|agent"; then
+    if eval "$CLI_TOOL" < "$_ANALYZE_V2_TMP"; then _judge_ok=1; break; fi
+  else
+    if eval "$CLI_TOOL" --print - < "$_ANALYZE_V2_TMP"; then _judge_ok=1; break; fi
+  fi
+  if [ "$_judge_attempt" -le "${#_JUDGE_BACKOFFS[@]}" ]; then
+    _wait=${_JUDGE_BACKOFFS[$((_judge_attempt - 1))]}
+    echo "WARN: analyze_v2 第 $_judge_attempt 次失败（退出码非零），${_wait}s 后重试..."
+    sleep "$_wait"
+  fi
+done
+[ "$_judge_ok" -eq 0 ] && \
+  echo "WARN: analyze_v2 重试 $(( ${#_JUDGE_BACKOFFS[@]} + 1 )) 次仍失败，任务保留在 analyzed 状态，下次运行自动续处理。"
+rm -f "$_ANALYZE_V2_TMP"
 
 # 4. Stage 4.5 + Stage 5: 规则评分 + 生成报告
 echo "[4/5] Stage 4.5+5: 规则评分 + 生成报告..."
@@ -181,6 +229,10 @@ echo "[5/5] git push..."
 git -C "$PIPELINE_DIR" add "$PIPELINE_DIR/data/pipeline.db"
 test -f "$PIPELINE_DIR/data/reports/$DATE.md" && \
   git -C "$PIPELINE_DIR" add "$PIPELINE_DIR/data/reports/$DATE.md" || true
+# v2 基础设施文件：stages/analyze.py 被 .gitignore 排除，需 force-add
+git -C "$PIPELINE_DIR" add -f "$PIPELINE_DIR/stages/analyze.py" || true
+git -C "$PIPELINE_DIR" add "$PIPELINE_DIR/stages/schedule.py" || true
+git -C "$PIPELINE_DIR" add "$PIPELINE_DIR/prompts/analyze_v2.md" || true
 
 git -C "$PIPELINE_DIR" diff --staged --quiet || \
   git -C "$PIPELINE_DIR" commit \
