@@ -167,7 +167,8 @@ TASK_IDS=$(sqlite3 "$DB" "
   SELECT id FROM tasks
   WHERE task_date='$DATE'
     AND status IN ('pending','running','analyzed')
-  ORDER BY CASE task_type WHEN 'bulk_first' THEN 0 WHEN 'bulk_followup' THEN 1 ELSE 2 END,
+  ORDER BY CASE task_type WHEN 'triggered' THEN 0 WHEN 'incremental' THEN 1
+                          WHEN 'bulk_first' THEN 2 ELSE 3 END,
            CASE status WHEN 'pending' THEN 0 WHEN 'running' THEN 1 ELSE 2 END,
            id;
 ")
