@@ -47,10 +47,11 @@ def gen_triggered_tasks(conn, date, dry_run) -> int:
           AND p.latest_release_at IS NOT NULL
           AND p.id NOT IN (
               SELECT project_id FROM tasks
-              WHERE task_date = ? AND task_type = 'triggered'
+              WHERE task_type = 'triggered'
+                AND status IN ('pending','running','analyzed')
           )
         GROUP BY p.id, p.latest_release, p.latest_release_at
-    """, (date,))
+    """)
     count = 0
     for row in cur.fetchall():
         pid, release, release_at, last_analyzed = row
@@ -116,12 +117,12 @@ def gen_incremental_tasks(conn, date, dry_run) -> int:
         WHERE p.status = 'active'
           AND p.id NOT IN (
               SELECT project_id FROM tasks
-              WHERE task_date = ?
+              WHERE status IN ('pending','running','analyzed')
           )
         GROUP BY p.id, p.stars, p.open_issues, p.last_commit_at,
                  p.prev_stars, p.prev_open_issues
         ORDER BY last_analyzed ASC  -- NULLs sort first in SQLite ASC, prioritizing never-analyzed projects
-    """, (date,))
+    """)
     count = 0
     limit = MAX_TASKS['incremental']
     for row in cur.fetchall():

@@ -63,7 +63,34 @@ python3 "$STAGES/init_db.py"
 # 把跨天遗留的 bulk 任务（pending/running/analyzed）归到当天，统一交给主循环处理。
 # 必须在 reset 块之前执行：否则跨天 analyzed 任务（task_date 仍是昨天）无法被
 # reset 块的 "task_date='今天' AND status='analyzed'" 识别，项目会被误降级为 bulk_pending。
+# 注意去重：同一 (project_id, task_type) 可能存在多条跨天遗留任务，直接 UPDATE 会撞
+# UNIQUE(project_id, task_date, task_type)。处理顺序：①同组只留最新一条，其余标
+# skipped；②与今天已有任务冲突的标 skipped；③迁移剩余。
 sqlite3 "$DB" "
+  UPDATE tasks
+  SET status='skipped', finished_at=strftime('%Y-%m-%dT%H:%M:%S+00:00','now')
+  WHERE task_type IN ('bulk_first','bulk_followup')
+    AND status IN ('pending','running','analyzed')
+    AND task_date < '$DATE'
+    AND id NOT IN (
+      SELECT MAX(id) FROM tasks
+      WHERE task_type IN ('bulk_first','bulk_followup')
+        AND status IN ('pending','running','analyzed') AND task_date < '$DATE'
+      GROUP BY project_id, task_type
+    );
+
+  UPDATE tasks
+  SET status='skipped', finished_at=strftime('%Y-%m-%dT%H:%M:%S+00:00','now')
+  WHERE task_type IN ('bulk_first','bulk_followup')
+    AND status IN ('pending','running','analyzed')
+    AND task_date < '$DATE'
+    AND EXISTS (
+      SELECT 1 FROM tasks t2
+      WHERE t2.project_id = tasks.project_id
+        AND t2.task_type = tasks.task_type
+        AND t2.task_date = '$DATE'
+    );
+
   UPDATE tasks
   SET task_date='$DATE'
   WHERE task_type IN ('bulk_first','bulk_followup')
