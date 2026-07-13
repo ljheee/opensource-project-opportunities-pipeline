@@ -23,10 +23,11 @@ pip install -r requirements.txt
 ### 日常增量运行
 
 ```bash
-bash run.sh
+bash run.sh          # 默认：最多处理 200 个，每批 5 个塞 CLI
+bash run.sh 30 3     # 语义同 run_bulk_v2.sh：<总项目数> <每CLI任务数>
 ```
 
-`run.sh` 会依次执行：git pull → init_db → Stage 3 语义过滤 → Stage 2 调度 → Stage 4 深度分析 → Stage 4.5 评分 → Stage 5 生成报告 → git commit/push。
+`run.sh` 会依次执行：git pull → init_db → 跨天任务迁移 → Stage 3 语义过滤 → Stage 2 调度（incremental，仅一次）→ Stage 4 批量循环（analyze.py 生成 draft → analyze_v2.md 精炼，每批一次 CLI，失败 60s/180s 退避重试）→ Stage 4.5 评分 → Stage 5 生成报告 → git commit/push。
 
 ### 存量消化（首次运行或积压较多时）
 

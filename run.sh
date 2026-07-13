@@ -16,7 +16,22 @@ if [ -f "$PIPELINE_DIR/.env" ]; then
 fi
 CLI_TOOL="${CLI_TOOL:-claude --dangerously-skip-permissions}"
 
-echo "=== GitHub Opportunities Pipeline - $DATE ==="
+# 参数：<本次最多处理项目数> <每次 CLI 判断的任务数>，语义与 run_bulk_v2.sh 一致
+# 不带参数时默认处理最多 200 个、每批 5 个（日常增量通常远小于此，自然全部处理完）
+TOTAL_PROJECTS=${1:-200}
+BATCH_SIZE_PER_CLI=${2:-5}
+
+if ! [[ "$TOTAL_PROJECTS" =~ ^[0-9]+$ ]] || [ "$TOTAL_PROJECTS" -le 0 ] || [ "$TOTAL_PROJECTS" -gt 1000 ]; then
+  echo "ERROR: TOTAL_PROJECTS 必须为 1~1000 之间的正整数，当前值: '$TOTAL_PROJECTS'"
+  echo "用法: bash run.sh [总项目数] [每CLI任务数]"
+  exit 1
+fi
+if ! [[ "$BATCH_SIZE_PER_CLI" =~ ^[0-9]+$ ]] || [ "$BATCH_SIZE_PER_CLI" -le 0 ] || [ "$BATCH_SIZE_PER_CLI" -gt 50 ]; then
+  echo "ERROR: BATCH_SIZE_PER_CLI 必须为 1~50 之间的正整数，当前值: '$BATCH_SIZE_PER_CLI'"
+  exit 1
+fi
+
+echo "=== GitHub Opportunities Pipeline - $DATE (total=$TOTAL_PROJECTS, batch_size=$BATCH_SIZE_PER_CLI) ==="
 
 # 进程互斥锁：防止 run.sh / run_bulk.sh 并发运行操作同一个 SQLite DB。
 # flock -n：非阻塞模式，若锁已被占用立即退出（避免两个进程同时 analyze 造成 DB 锁竞争）。
@@ -158,57 +173,92 @@ if [ "$PENDING" -eq 0 ]; then
   exit 0
 fi
 
-echo "今日待分析任务：$PENDING 个"
+echo "今日待分析任务：$PENDING 个（本次最多处理 $TOTAL_PROJECTS，每批 $BATCH_SIZE_PER_CLI 个塞 CLI）"
 
-# 3. Stage 4: 深层分析（v2 两阶段：analyze.py 规则 draft → analyze_v2.md LLM 精炼）
-echo "[3/5] Stage 4: 深层分析 ($PENDING 个任务)..."
+# 3. Stage 4: 深层分析（v2 两阶段，批量循环：每批 BATCH_SIZE_PER_CLI 个任务一次 CLI）
+# 注意：调度已在循环前一次性完成。incremental 模式每跑一次 schedule 都会新增任务，
+# 绝不能放进循环里，否则任务会无限增生。
+processed=0
+batch_num=0
+done_after=0  # 累计 done 计数，循环内更新；空跑时给结尾兜底
 
-TASK_IDS=$(sqlite3 "$DB" "
-  SELECT id FROM tasks
-  WHERE task_date='$DATE'
-    AND status IN ('pending','running','analyzed')
-  ORDER BY CASE task_type WHEN 'triggered' THEN 0 WHEN 'incremental' THEN 1
-                          WHEN 'bulk_first' THEN 2 ELSE 3 END,
-           CASE status WHEN 'pending' THEN 0 WHEN 'running' THEN 1 ELSE 2 END,
-           id;
-")
-TASK_IDS_CSV=$(echo "$TASK_IDS" | tr '\n' ',' | sed 's/,$//')
-echo "[3/5] Task IDs: $TASK_IDS_CSV"
-
-# Step 1: Python 规则分析，生成 draft
-echo "[3/5] Running stages/analyze.py..."
-python3 "$STAGES/analyze.py" --date "$DATE" --task-ids "$TASK_IDS_CSV" || \
-  echo "WARN: analyze.py 返回非零退出码，部分 draft 可能未生成。"
-
-# Step 2: CLI 复杂判断（瞬时连接错误重试：第 1 次失败后等 60s，第 2 次失败后等 180s，共 3 次尝试）
-echo "[3/5] Running CLI judgment..."
-_ANALYZE_V2_TMP=$(mktemp)
-sed \
-  -e "s|/path/to/pipeline/data/pipeline.db|$DB|g" \
-  -e "s|ANALYSIS_DATE|$DATE|g" \
-  -e "s|TASK_ID_LIST|$TASK_IDS_CSV|g" \
-  "$PROMPTS/analyze_v2.md" > "$_ANALYZE_V2_TMP"
-
-_JUDGE_BACKOFFS=(60 180)   # 第 1 次重试前等 60s，第 2 次重试前等 180s
-_judge_attempt=0
-_judge_ok=0
-while [ "$_judge_attempt" -le "${#_JUDGE_BACKOFFS[@]}" ]; do
-  _judge_attempt=$((_judge_attempt + 1))
-  [ "$_judge_attempt" -gt 1 ] && echo "[3/5] CLI judgment 第 $_judge_attempt 次尝试..."
-  if echo "$CLI_TOOL" | grep -qE "cursor-agent|agent"; then
-    if eval "$CLI_TOOL" < "$_ANALYZE_V2_TMP"; then _judge_ok=1; break; fi
-  else
-    if eval "$CLI_TOOL" --print - < "$_ANALYZE_V2_TMP"; then _judge_ok=1; break; fi
+while [ "$processed" -lt "$TOTAL_PROJECTS" ]; do
+  batch_num=$((batch_num + 1))
+  remaining=$((TOTAL_PROJECTS - processed))
+  this_batch_size=$BATCH_SIZE_PER_CLI
+  if [ "$remaining" -lt "$this_batch_size" ]; then
+    this_batch_size=$remaining
   fi
-  if [ "$_judge_attempt" -le "${#_JUDGE_BACKOFFS[@]}" ]; then
-    _wait=${_JUDGE_BACKOFFS[$((_judge_attempt - 1))]}
-    echo "WARN: analyze_v2 第 $_judge_attempt 次失败（退出码非零），${_wait}s 后重试..."
-    sleep "$_wait"
+
+  echo ""
+  echo "=== Batch $batch_num (target $this_batch_size, processed $processed/$TOTAL_PROJECTS) ==="
+
+  done_before=$(sqlite3 "$DB" \
+    "SELECT COUNT(*) FROM tasks WHERE task_date='$DATE' AND status='done';")
+
+  TASK_IDS=$(sqlite3 "$DB" "
+    SELECT id FROM tasks
+    WHERE task_date='$DATE'
+      AND status IN ('pending','running','analyzed')
+    ORDER BY CASE task_type WHEN 'triggered' THEN 0 WHEN 'incremental' THEN 1
+                            WHEN 'bulk_first' THEN 2 ELSE 3 END,
+             CASE status WHEN 'pending' THEN 0 WHEN 'running' THEN 1 ELSE 2 END,
+             id
+    LIMIT $this_batch_size;
+  ")
+
+  if [ -z "$TASK_IDS" ]; then
+    echo "[Batch $batch_num] 没有待处理任务，结束循环。"
+    break
   fi
+
+  TASK_IDS_CSV=$(echo "$TASK_IDS" | tr '\n' ',' | sed 's/,$//')
+  echo "[Batch $batch_num] Task IDs: $TASK_IDS_CSV"
+
+  # Step 1: Python 规则分析，生成 draft
+  echo "[Batch $batch_num] Running stages/analyze.py..."
+  python3 "$STAGES/analyze.py" --date "$DATE" --task-ids "$TASK_IDS_CSV" || \
+    echo "WARN: analyze.py 返回非零退出码，部分 draft 可能未生成。"
+
+  # Step 2: CLI 复杂判断（瞬时连接错误重试：第 1 次失败后等 60s，第 2 次失败后等 180s，共 3 次尝试）
+  echo "[Batch $batch_num] Running CLI judgment..."
+  _ANALYZE_V2_TMP=$(mktemp)
+  sed \
+    -e "s|/path/to/pipeline/data/pipeline.db|$DB|g" \
+    -e "s|ANALYSIS_DATE|$DATE|g" \
+    -e "s|TASK_ID_LIST|$TASK_IDS_CSV|g" \
+    "$PROMPTS/analyze_v2.md" > "$_ANALYZE_V2_TMP"
+
+  _JUDGE_BACKOFFS=(60 180)   # 第 1 次重试前等 60s，第 2 次重试前等 180s
+  _judge_attempt=0
+  _judge_ok=0
+  while [ "$_judge_attempt" -le "${#_JUDGE_BACKOFFS[@]}" ]; do
+    _judge_attempt=$((_judge_attempt + 1))
+    [ "$_judge_attempt" -gt 1 ] && echo "[Batch $batch_num] CLI judgment 第 $_judge_attempt 次尝试..."
+    if echo "$CLI_TOOL" | grep -qE "cursor-agent|agent"; then
+      if eval "$CLI_TOOL" < "$_ANALYZE_V2_TMP"; then _judge_ok=1; break; fi
+    else
+      if eval "$CLI_TOOL" --print - < "$_ANALYZE_V2_TMP"; then _judge_ok=1; break; fi
+    fi
+    if [ "$_judge_attempt" -le "${#_JUDGE_BACKOFFS[@]}" ]; then
+      _wait=${_JUDGE_BACKOFFS[$((_judge_attempt - 1))]}
+      echo "WARN: analyze_v2 第 $_judge_attempt 次失败（退出码非零），${_wait}s 后重试..."
+      sleep "$_wait"
+    fi
+  done
+  [ "$_judge_ok" -eq 0 ] && \
+    echo "WARN: analyze_v2 重试 $(( ${#_JUDGE_BACKOFFS[@]} + 1 )) 次仍失败，任务保留在 analyzed 状态，下次运行自动续处理。"
+  rm -f "$_ANALYZE_V2_TMP"
+
+  done_after=$(sqlite3 "$DB" \
+    "SELECT COUNT(*) FROM tasks WHERE task_date='$DATE' AND status='done';")
+  if [ "$done_after" -eq "$done_before" ]; then
+    echo "WARN: 本批没有任务变为 done，避免死循环，结束。"
+    break
+  fi
+  processed=$((processed + done_after - done_before))
+  echo "[Batch $batch_num] Complete. This run: $processed / $TOTAL_PROJECTS; cumulative done: $done_after"
 done
-[ "$_judge_ok" -eq 0 ] && \
-  echo "WARN: analyze_v2 重试 $(( ${#_JUDGE_BACKOFFS[@]} + 1 )) 次仍失败，任务保留在 analyzed 状态，下次运行自动续处理。"
-rm -f "$_ANALYZE_V2_TMP"
 
 # 4. Stage 4.5 + Stage 5: 规则评分 + 生成报告
 echo "[4/5] Stage 4.5+5: 规则评分 + 生成报告..."
@@ -254,5 +304,5 @@ if [ "$_push_ok" -eq 0 ]; then
   echo "       请手动执行：cd $PIPELINE_DIR && git pull --rebase && git push"
 fi
 
-echo "=== 完成 ==="
+echo "=== 完成 === 本次处理 ${processed:-0} / $TOTAL_PROJECTS 个项目（今日累计 done: ${done_after:-0}）"
 echo "报告：$PIPELINE_DIR/data/reports/$DATE.md"
