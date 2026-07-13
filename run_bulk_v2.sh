@@ -133,12 +133,12 @@ if [ "$FILTER_COUNT" -gt 0 ]; then
     fi
     if echo "$CLI_TOOL" | grep -qE "cursor-agent|agent"; then
       eval "$CLI_TOOL" < "$_FILTER_TMP" || {
-        echo "WARN: agent filter 返回非零退出码（round=$_filter_rounds），本轮跳过。"
+        echo "WARN: agent filter 返回非零退出码（round=${_filter_rounds}），本轮跳过。"
         break
       }
     else
       eval "$CLI_TOOL" --print - < "$_FILTER_TMP" || {
-        echo "WARN: claude filter 返回非零退出码（round=$_filter_rounds），本轮跳过。"
+        echo "WARN: claude filter 返回非零退出码（round=${_filter_rounds}），本轮跳过。"
         break
       }
     fi

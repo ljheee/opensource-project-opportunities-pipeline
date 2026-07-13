@@ -146,12 +146,12 @@ if [ "$FILTER_COUNT" -gt 0 ]; then
     fi
     if echo "$CLI_TOOL" | grep -qE "cursor-agent|agent"; then
       eval "$CLI_TOOL" < "$_FILTER_TMP" || {
-        echo "WARN: agent filter 返回非零退出码（round=$_filter_rounds），本轮跳过，剩余项目留待下次重试。"
+        echo "WARN: agent filter 返回非零退出码（round=${_filter_rounds}），本轮跳过，剩余项目留待下次重试。"
         break
       }
     else
       eval "$CLI_TOOL" --print - < "$_FILTER_TMP" || {
-        echo "WARN: claude filter 返回非零退出码（round=$_filter_rounds），本轮跳过，剩余项目留待下次重试。"
+        echo "WARN: claude filter 返回非零退出码（round=${_filter_rounds}），本轮跳过，剩余项目留待下次重试。"
         break
       }
     fi
@@ -197,7 +197,7 @@ if [ "$PENDING" -eq 0 ]; then
   exit 0
 fi
 
-echo "今日待分析任务：$PENDING 个（本次最多处理 $TOTAL_PROJECTS，每批 $BATCH_SIZE_PER_CLI 个塞 CLI）"
+echo "今日待分析任务：$PENDING 个（本次最多处理 ${TOTAL_PROJECTS}，每批 ${BATCH_SIZE_PER_CLI} 个塞 CLI）"
 
 # 3. Stage 4: 深层分析（v2 两阶段，批量循环：每批 BATCH_SIZE_PER_CLI 个任务一次 CLI）
 # 注意：调度已在循环前一次性完成。incremental 模式每跑一次 schedule 都会新增任务，
