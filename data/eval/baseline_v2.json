@@ -1,0 +1,101 @@
+{
+  "captured_at": "2026-07-30T04:04:43.657844+00:00",
+  "rows": {
+    "hyperjumptech/grule-rule-engine|feature_gap|canonical:Java/license": {
+      "id": 1291,
+      "status": "open",
+      "value": "low",
+      "last_seen_at": "2026-04-24T16:30:13.428742+00:00"
+    },
+    "sony/gobreaker|feature_gap|canonical:Java/issue-template": {
+      "id": 1020,
+      "status": "open",
+      "value": "medium",
+      "last_seen_at": "2026-04-19T13:10:11.341346+00:00"
+    },
+    "sony/gobreaker|feature_gap|canonical:Java/dockerfile": {
+      "id": 1019,
+      "status": "open",
+      "value": "medium",
+      "last_seen_at": "2026-04-19T13:10:11.341346+00:00"
+    },
+    "taskiq-python/taskiq|feature_gap|canonical:Python/docker": {
+      "id": 1535,
+      "status": "open",
+      "value": "low",
+      "last_seen_at": "2026-04-25T16:35:56.126700+00:00"
+    },
+    "mikro-orm/mikro-orm|issue|https://github.com/mikro-orm/mikro-orm/issues/296": {
+      "id": 334,
+      "status": "open",
+      "value": "high",
+      "last_seen_at": "2026-04-18T06:50:20.668722+00:00"
+    },
+    "ts-rest/ts-rest|issue|https://github.com/ts-rest/ts-rest/issues/797": {
+      "id": 1102,
+      "status": "open",
+      "value": "high",
+      "last_seen_at": "2026-04-19T15:45:33.994909+00:00"
+    },
+    "kysely-org/kysely|issue|https://github.com/kysely-org/kysely/issues/320": {
+      "id": 52,
+      "status": "open",
+      "value": "high",
+      "last_seen_at": "2026-04-18T04:25:45.991341+00:00"
+    },
+    "connectrpc/connect-es|feature_gap|issue:507": {
+      "id": 6924,
+      "status": "open",
+      "value": "high",
+      "last_seen_at": "2026-07-15T05:02:20.949585+00:00"
+    },
+    "sqlalchemy/alembic|issue|https://github.com/sqlalchemy/alembic/issues/278": {
+      "id": 947,
+      "status": "open",
+      "value": "high",
+      "last_seen_at": "2026-04-19T09:03:55.278025+00:00"
+    },
+    "TanStack/router|performance|issue:3997": {
+      "id": 6762,
+      "status": "open",
+      "value": "high",
+      "last_seen_at": "2026-07-15T02:18:42.319766+00:00"
+    },
+    "mcuadros/ofelia|feature_gap|canonical:Java/scheduler": {
+      "id": 971,
+      "status": "open",
+      "value": "high",
+      "last_seen_at": "2026-04-19T10:26:41.443096+00:00"
+    },
+    "apache/datafusion-ballista|feature_gap|canonical:Scala/Java/authentication": {
+      "id": 1576,
+      "status": "open",
+      "value": "high",
+      "last_seen_at": "2026-06-27T16:48:19.235734+00:00"
+    },
+    "urql-graphql/urql|issue|https://github.com/urql-graphql/urql/issues/1062": {
+      "id": 353,
+      "status": "open",
+      "value": "high",
+      "last_seen_at": "2026-04-18T06:56:47.627147+00:00"
+    },
+    "owncast/owncast|issue|https://github.com/owncast/owncast/issues/489": {
+      "id": 157,
+      "status": "open",
+      "value": "high",
+      "last_seen_at": "2026-04-18T05:28:15.553133+00:00"
+    },
+    "owncast/owncast|performance|https://github.com/owncast/owncast/issues/980": {
+      "id": 158,
+      "status": "open",
+      "value": "high",
+      "last_seen_at": "2026-04-18T05:28:15.553133+00:00"
+    },
+    "hibiken/asynq|issue|https://github.com/hibiken/asynq/issues/244": {
+      "id": 62,
+      "status": "open",
+      "value": "high",
+      "last_seen_at": "2026-04-18T04:30:09.028582+00:00"
+    }
+  }
+}
