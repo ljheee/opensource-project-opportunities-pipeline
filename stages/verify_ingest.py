@@ -5,6 +5,8 @@ verify_v3.md 会话把本批裁决写为单个 JSON 数组（.pending_<ts>.json 
 本脚本在 CLI 退出后运行：schema 校验 → append 正式日志 → 审计。
 坏条目隔离到 quarantine.jsonl；审计问题一律 WARN 不中断（机会点停留 open 可幂等续处理）。
 """
+from __future__ import annotations
+
 import argparse, json, os, sqlite3, sys
 from datetime import datetime, timezone
 
