@@ -41,7 +41,7 @@ def render_report(date: str) -> str:
               AND o.value IN ('high', 'medium')
               AND o.difficulty IS NOT NULL
               AND o.urgency IS NOT NULL
-              AND o.status = 'open'
+              AND o.status IN ('open', 'verified')
             ORDER BY
               CASE o.value WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
               CASE o.urgency WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
@@ -53,9 +53,10 @@ def render_report(date: str) -> str:
             SELECT
               (SELECT COUNT(*) FROM projects WHERE status IN ('active', 'analyzing'))           as active_total,
               (SELECT COUNT(*) FROM projects WHERE status IN ('bulk_pending', 'discovered'))    as pending,
-              (SELECT COUNT(*) FROM opportunities WHERE status = 'open')                        as open_opps,
+              (SELECT COUNT(*) FROM opportunities WHERE status IN ('open', 'verified'))         as open_opps,
+              (SELECT COUNT(*) FROM opportunities WHERE status = 'verified')                    as verified_opps,
               (SELECT COUNT(*) FROM opportunities
-               WHERE DATE(first_seen_at) = ? AND status = 'open')                              as new_opps_today
+               WHERE DATE(first_seen_at) = ? AND status IN ('open', 'verified'))                as new_opps_today
         """, (date,)).fetchone()
     finally:
         if conn is not None:
@@ -71,6 +72,7 @@ def render_report(date: str) -> str:
         f"| 监控中项目 | {stats['active_total']} |",
         f"| 存量待分析 | {stats['pending']} |",
         f"| 开放机会点 | {stats['open_opps']} |",
+        f"| 已验证机会点 | {stats['verified_opps']} |",
         f"| 今日新增   | {stats['new_opps_today']} 个机会点 |",
         f"| 今日分析   | {len(tasks)} 个项目 |",
         "",
@@ -94,10 +96,10 @@ def render_report(date: str) -> str:
         "",
         "## 高价值贡献机会",
         "",
-        "> 展示今日分析项目当前所有 open 高价值机会（含历史轮次发现、今日仍 open 的机会点）。",
+        "> 展示今日分析项目当前所有 open/verified 高价值机会（含历史轮次发现、今日仍 open 的机会点）。",
         "",
-        "| 项目 | 标题 | 类型 | 价值 | 难度 | 紧迫 | 信号 |",
-        "|------|------|------|------|------|------|------|",
+        "| 项目 | 标题 | 类型 | 价值 | 难度 | 紧迫 | 信号 | 验证 |",
+        "|------|------|------|------|------|------|------|------|",
     ]
 
     for o in opps:
@@ -109,6 +111,7 @@ def render_report(date: str) -> str:
         else:
             title_cell = title_text
         signal = o['maintainer_signal'] or '—'
+        verified_mark = '✓' if o['status'] == 'verified' else ''
         lines.append(
             f"| [{o['project_id']}]({o['project_url']}) "
             f"| {title_cell} "
@@ -116,7 +119,8 @@ def render_report(date: str) -> str:
             f"| {o['value']} "
             f"| {o['difficulty']} "
             f"| {o['urgency']} "
-            f"| {signal} |"
+            f"| {signal} "
+            f"| {verified_mark} |"
         )
 
     lines += ["", "---", "", f"*生成时间: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*", ""]

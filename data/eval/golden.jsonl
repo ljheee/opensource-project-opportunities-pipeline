@@ -1,0 +1,16 @@
+{"project": "hyperjumptech/grule-rule-engine", "source_type": "feature_gap", "source_ref": "canonical:Java/license", "label": "fake", "notes": "LICENSE 文件被当成缺失功能（meta 文件误报）", "labeled_at": "2026-07-30"}
+{"project": "sony/gobreaker", "source_type": "feature_gap", "source_ref": "canonical:Java/issue-template", "label": "fake", "notes": "issue 模板被当成缺失功能（meta 文件误报）", "labeled_at": "2026-07-30"}
+{"project": "sony/gobreaker", "source_type": "feature_gap", "source_ref": "canonical:Java/dockerfile", "label": "fake", "notes": "Dockerfile 被当成缺失功能（meta 文件误报）", "labeled_at": "2026-07-30"}
+{"project": "taskiq-python/taskiq", "source_type": "feature_gap", "source_ref": "canonical:Python/docker", "label": "fake", "notes": "docker 支持被当成缺失功能（meta 文件误报）", "labeled_at": "2026-07-30"}
+{"project": "mikro-orm/mikro-orm", "source_type": "issue", "source_ref": "https://github.com/mikro-orm/mikro-orm/issues/296", "label": "fake", "notes": "'Who uses in production' 调查帖，非可贡献机会", "labeled_at": "2026-07-30"}
+{"project": "ts-rest/ts-rest", "source_type": "issue", "source_ref": "https://github.com/ts-rest/ts-rest/issues/797", "label": "fake", "notes": "'Future of ts-rest' 元讨论帖，非可贡献机会", "labeled_at": "2026-07-30"}
+{"project": "kysely-org/kysely", "source_type": "issue", "source_ref": "https://github.com/kysely-org/kysely/issues/320", "label": "fake", "notes": "生产使用调查帖，非可贡献机会", "labeled_at": "2026-07-30"}
+{"project": "connectrpc/connect-es", "source_type": "feature_gap", "source_ref": "issue:507", "label": "real", "notes": "gRPC Server Reflection，55 reactions 的明确功能缺口", "labeled_at": "2026-07-30"}
+{"project": "sqlalchemy/alembic", "source_type": "issue", "source_ref": "https://github.com/sqlalchemy/alembic/issues/278", "label": "real", "notes": "autogenerate postgresql 枚举缺陷，82 reactions", "labeled_at": "2026-07-30"}
+{"project": "TanStack/router", "source_type": "performance", "source_ref": "issue:3997", "label": "real", "notes": "beforeLoad 多余 server round-trip，62 reactions", "labeled_at": "2026-07-30"}
+{"project": "mcuadros/ofelia", "source_type": "feature_gap", "source_ref": "canonical:Java/scheduler", "label": "real", "notes": "scheduler 核心功能缺口", "labeled_at": "2026-07-30"}
+{"project": "apache/datafusion-ballista", "source_type": "feature_gap", "source_ref": "canonical:Scala/Java/authentication", "label": "real", "notes": "authentication 实现缺口", "labeled_at": "2026-07-30"}
+{"project": "urql-graphql/urql", "source_type": "issue", "source_ref": "https://github.com/urql-graphql/urql/issues/1062", "label": "real", "notes": "RFC: Cross-Tab Synchronization Exchange，52 reactions", "labeled_at": "2026-07-30"}
+{"project": "owncast/owncast", "source_type": "issue", "source_ref": "https://github.com/owncast/owncast/issues/489", "label": "real", "notes": "Password protected livestream，43 reactions", "labeled_at": "2026-07-30"}
+{"project": "owncast/owncast", "source_type": "performance", "source_ref": "https://github.com/owncast/owncast/issues/980", "label": "real", "notes": "SRT 流支持，33 reactions", "labeled_at": "2026-07-30"}
+{"project": "hibiken/asynq", "source_type": "issue", "source_ref": "https://github.com/hibiken/asynq/issues/244", "label": "real", "notes": "Workflow 支持特性请求，29 reactions", "labeled_at": "2026-07-30"}

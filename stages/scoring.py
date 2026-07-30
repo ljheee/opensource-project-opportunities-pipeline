@@ -139,6 +139,15 @@ def _to_list(v) -> list:
     return v if isinstance(v, list) else []
 
 
+def _writeback_status(signal: str, current_status: str) -> str:
+    """复评写回状态：仅 rejected 信号判死为 obsolete，其余保持原状态。
+
+    v3 引入 verified 状态后，若复评无条件写回 'open'，verify 选取条件
+    (status='open') 会反复选中同一行，造成无限重验循环；verified 必须沉淀。
+    """
+    return "obsolete" if signal == "rejected" else current_status
+
+
 def score_maintainer_signal(me: dict) -> str:
     similar_prs    = _to_list(me.get("similar_prs"))
     welcome_labels = _to_list(me.get("welcome_labels"))
@@ -329,7 +338,7 @@ def run():
 
     try:
         rows = conn.execute("""
-            SELECT o.id, o.project_id, o.source_type,
+            SELECT o.id, o.project_id, o.source_type, o.status AS opp_status,
                    o.value_evidence, o.difficulty_evidence,
                    o.urgency_evidence, o.maintainer_evidence,
                    p.stars AS project_stars,
@@ -337,7 +346,7 @@ def run():
             FROM opportunities o
             JOIN projects p ON p.id = o.project_id
             LEFT JOIN project_meta m ON m.project_id = o.project_id
-            WHERE o.value IS NULL AND o.status = 'open'
+            WHERE o.value IS NULL AND o.status IN ('open', 'verified')
         """).fetchall()
 
         print(f"待评分机会点：{len(rows)} 个")
@@ -366,7 +375,7 @@ def run():
                 value      = score_value(ve, signal, row["source_type"] or "", project_adopted)
                 difficulty = score_difficulty(de)
                 urgency    = score_urgency(ue, row["source_type"] or "")
-                status     = "obsolete" if signal == "rejected" else "open"
+                status     = _writeback_status(signal, row["opp_status"])
             except Exception as e:
                 print(f"  SKIP {row['id']}: 评分计算异常 {e}")
                 continue

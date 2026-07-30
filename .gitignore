@@ -11,6 +11,8 @@ data/*.db-wal
 data/*.db-shm
 # 进程互斥锁文件（运行时临时文件，不需要版本追踪）
 data/.pipeline.lock
+# verify LLM 裁决临时文件（ingest 校验后才落正式日志）
+data/verify_log/.pending_*
 # LLM 运行时生成的临时执行脚本（决策已写入 DB，脚本本身无需版本追踪）
 scripts/
 stages/analyze*.py
