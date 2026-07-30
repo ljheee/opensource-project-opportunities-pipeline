@@ -92,5 +92,57 @@ class TestScoreDifficulty(unittest.TestCase):
         self.assertEqual(scoring.score_difficulty(de), "medium")
 
 
+class TestWritebackStatus(unittest.TestCase):
+    def test_rejected_becomes_obsolete(self):
+        self.assertEqual(scoring._writeback_status("rejected", "verified"), "obsolete")
+        self.assertEqual(scoring._writeback_status("rejected", "open"), "obsolete")
+
+    def test_verified_preserved(self):
+        self.assertEqual(scoring._writeback_status("welcoming", "verified"), "verified")
+        self.assertEqual(scoring._writeback_status("unknown", "verified"), "verified")
+
+    def test_open_preserved(self):
+        self.assertEqual(scoring._writeback_status("welcoming", "open"), "open")
+
+
+class TestRunPreservesVerified(unittest.TestCase):
+    """复评集成测试：status='verified' + value=NULL 的行经 run() 后 status 仍为 verified。"""
+
+    def _build_db(self, path):
+        import sqlite3
+        conn = sqlite3.connect(path)
+        conn.executescript("""
+            CREATE TABLE projects (id TEXT PRIMARY KEY, stars INTEGER);
+            CREATE TABLE project_meta (project_id TEXT, canonical_url TEXT);
+            CREATE TABLE opportunities (
+                id INTEGER PRIMARY KEY, project_id TEXT, task_id INTEGER,
+                source_type TEXT, source_ref TEXT,
+                value TEXT, difficulty TEXT, urgency TEXT, maintainer_signal TEXT,
+                value_evidence TEXT, difficulty_evidence TEXT,
+                urgency_evidence TEXT, maintainer_evidence TEXT,
+                status TEXT DEFAULT 'open');
+        """)
+        conn.execute("INSERT INTO projects VALUES ('o/r', 1000)")
+        conn.execute(
+            "INSERT INTO opportunities (project_id, task_id, source_type, source_ref,"
+            " value_evidence, difficulty_evidence, urgency_evidence, maintainer_evidence,"
+            " status) VALUES ('o/r', 1, 'issue', 'issue:1', '{}', '{}', '{}', '{}', 'verified')")
+        conn.commit()
+        conn.close()
+
+    def test_verified_row_scored_and_stays_verified(self):
+        import os, sqlite3, tempfile
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d:
+            db = os.path.join(d, "t.db")
+            self._build_db(db)
+            with mock.patch.object(scoring, "DB_PATH", db):
+                scoring.run()
+            row = sqlite3.connect(db).execute(
+                "SELECT status, value FROM opportunities").fetchone()
+            self.assertEqual(row[0], "verified")   # 不被冲回 open
+            self.assertIsNotNone(row[1])           # 被复评选中并打分
+
+
 if __name__ == "__main__":
     unittest.main()
