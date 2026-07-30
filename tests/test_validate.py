@@ -83,9 +83,16 @@ class TestValidateRow(unittest.TestCase):
     def test_feature_gap_without_verification_refuted(self):
         gh = FakeGh({})
         row = self._row(source_type="feature_gap", source_ref="canonical:Java/x",
-                        value_evidence="{}")
+                        value_evidence="{}", status="open")
         actions = v.validate_row(row, gh, lambda e: None)
         self.assertIn("refute:no-feature-verification", actions)
+
+    def test_feature_gap_verified_exempt(self):
+        gh = FakeGh({})
+        row = self._row(source_type="feature_gap", source_ref="canonical:Java/x",
+                        value_evidence="{}")
+        actions = v.validate_row(row, gh, lambda e: None)
+        self.assertEqual(actions, [])
 
     def test_api_error_skips_without_action(self):
         gh = FakeGh({"/repos/o/r/issues/42": (429, None)})

@@ -170,8 +170,9 @@ def validate_row(row: dict, gh, log) -> list:
             elif status is None or status == 429 or (status and status >= 500):
                 pass  # API 错误：保留原值
 
-    # 5. feature_gap 必须有核查证据
-    if row.get("source_type") == "feature_gap":
+    # 5. feature_gap 必须有核查证据（仅兜底 open 行；verified 行已由 verify 用全新
+    #    证据独立做过存在性核查，豁免——否则 legacy 行会被 confirm 后再误 refute）
+    if row.get("source_type") == "feature_gap" and row.get("status") == "open":
         fv = ve.get("feature_verification")
         ok = (isinstance(fv, dict)
               and isinstance(fv.get("searched_terms"), list) and fv["searched_terms"]
