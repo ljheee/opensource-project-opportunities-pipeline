@@ -271,5 +271,54 @@ class TestEvidenceJsonContract(unittest.TestCase):
         self.assertIsInstance(data["welcome_labels"], list)
 
 
+class TestRefutedProtection(unittest.TestCase):
+    """ON CONFLICT 重分析时：refuted 行保持 refuted 及评分；其余行照旧重置 draft。"""
+
+    COLUMNS = ("project_id", "task_id", "source_type", "source_ref", "title", "description",
+               "impl_hint", "issue_number", "issue_reactions",
+               "value_evidence", "difficulty_evidence", "urgency_evidence", "maintainer_evidence",
+               "first_seen_at", "last_seen_at")
+
+    def _build_db(self):
+        import sqlite3
+        conn = sqlite3.connect(":memory:")
+        conn.execute("""
+            CREATE TABLE opportunities (
+                project_id TEXT, task_id INTEGER, source_type TEXT, source_ref TEXT,
+                title TEXT, description TEXT, value TEXT, difficulty TEXT, urgency TEXT,
+                maintainer_signal TEXT, impl_hint TEXT, issue_number INTEGER,
+                issue_reactions INTEGER, has_linked_pr INTEGER,
+                value_evidence TEXT, difficulty_evidence TEXT,
+                urgency_evidence TEXT, maintainer_evidence TEXT,
+                status TEXT DEFAULT 'open', first_seen_at TEXT, last_seen_at TEXT,
+                UNIQUE(project_id, source_type, source_ref))""")
+        return conn
+
+    def _upsert(self, conn, status_seed):
+        from stages import analyze
+        conn.execute(
+            "INSERT INTO opportunities (project_id, task_id, source_type, source_ref,"
+            " value, status, first_seen_at, last_seen_at)"
+            " VALUES ('o/r', 1, 'feature_gap', 'canonical:Java/x', 'high', ?, '2026-01-01', '2026-01-01')",
+            (status_seed,))
+        params = ('o/r', 2, 'feature_gap', 'canonical:Java/x', 't', 'd',
+                  'hint', None, 0, '{}', '{}', '{}', '{}', '2026-07-30', '2026-07-30')
+        conn.execute(analyze._OPP_UPSERT_SQL, params)
+        return conn.execute(
+            "SELECT status, value FROM opportunities WHERE source_ref='canonical:Java/x'").fetchone()
+
+    def test_refuted_row_survives_reanalysis(self):
+        conn = self._build_db()
+        status, value = self._upsert(conn, "refuted")
+        self.assertEqual(status, "refuted")
+        self.assertEqual(value, "high")   # 评分不被置 NULL，不再进入 verify
+
+    def test_verified_row_returns_to_draft(self):
+        conn = self._build_db()
+        status, value = self._upsert(conn, "verified")
+        self.assertEqual(status, "draft")  # 重分析=新证据，重走精炼+验证
+        self.assertIsNone(value)
+
+
 if __name__ == "__main__":
     unittest.main()

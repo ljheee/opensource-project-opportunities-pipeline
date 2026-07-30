@@ -65,6 +65,38 @@ KEY_FILES = [
     "Dockerfile", ".github/workflows",
 ]
 
+_OPP_UPSERT_SQL = """
+    INSERT INTO opportunities
+        (project_id, task_id, source_type, source_ref, title, description,
+         value, difficulty, urgency, maintainer_signal,
+         impl_hint, issue_number, issue_reactions, has_linked_pr,
+         value_evidence, difficulty_evidence, urgency_evidence, maintainer_evidence,
+         status, first_seen_at, last_seen_at)
+    VALUES
+        (?, ?, ?, ?, ?, ?,
+         NULL, NULL, NULL, NULL,
+         ?, ?, ?, 0,
+         ?, ?, ?, ?,
+         'draft', ?, ?)
+    ON CONFLICT(project_id, source_type, source_ref) DO UPDATE SET
+        task_id=excluded.task_id,
+        title=excluded.title,
+        description=excluded.description,
+        impl_hint=excluded.impl_hint,
+        issue_number=excluded.issue_number,
+        issue_reactions=excluded.issue_reactions,
+        value_evidence=excluded.value_evidence,
+        difficulty_evidence=excluded.difficulty_evidence,
+        urgency_evidence=excluded.urgency_evidence,
+        maintainer_evidence=excluded.maintainer_evidence,
+        last_seen_at=excluded.last_seen_at,
+        status=CASE WHEN opportunities.status='refuted' THEN 'refuted' ELSE 'draft' END,
+        value=CASE WHEN opportunities.status='refuted' THEN opportunities.value ELSE NULL END,
+        difficulty=CASE WHEN opportunities.status='refuted' THEN opportunities.difficulty ELSE NULL END,
+        urgency=CASE WHEN opportunities.status='refuted' THEN opportunities.urgency ELSE NULL END,
+        maintainer_signal=CASE WHEN opportunities.status='refuted' THEN opportunities.maintainer_signal ELSE NULL END
+"""
+
 
 def now_utc() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -742,34 +774,7 @@ def analyze_project(conn: sqlite3.Connection, task: dict, dry_run: bool = False)
     opp_count = 0
     for opp in all_opportunities:
         try:
-            conn.execute("""
-                INSERT INTO opportunities
-                    (project_id, task_id, source_type, source_ref, title, description,
-                     value, difficulty, urgency, maintainer_signal,
-                     impl_hint, issue_number, issue_reactions, has_linked_pr,
-                     value_evidence, difficulty_evidence, urgency_evidence, maintainer_evidence,
-                     status, first_seen_at, last_seen_at)
-                VALUES
-                    (?, ?, ?, ?, ?, ?,
-                     NULL, NULL, NULL, NULL,
-                     ?, ?, ?, 0,
-                     ?, ?, ?, ?,
-                     'draft', ?, ?)
-                ON CONFLICT(project_id, source_type, source_ref) DO UPDATE SET
-                    task_id=excluded.task_id,
-                    title=excluded.title,
-                    description=excluded.description,
-                    impl_hint=excluded.impl_hint,
-                    issue_number=excluded.issue_number,
-                    issue_reactions=excluded.issue_reactions,
-                    value_evidence=excluded.value_evidence,
-                    difficulty_evidence=excluded.difficulty_evidence,
-                    urgency_evidence=excluded.urgency_evidence,
-                    maintainer_evidence=excluded.maintainer_evidence,
-                    last_seen_at=excluded.last_seen_at,
-                    status='draft',
-                    value=NULL, difficulty=NULL, urgency=NULL, maintainer_signal=NULL
-            """, (
+            conn.execute(_OPP_UPSERT_SQL, (
                 project_id, task_id,
                 opp["source_type"], opp["source_ref"], opp["title"], opp["description"],
                 opp["impl_hint"], opp["issue_number"], opp["issue_reactions"],
