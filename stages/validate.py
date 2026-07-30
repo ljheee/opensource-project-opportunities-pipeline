@@ -78,6 +78,12 @@ def parse_blob_url(url: str):
     return None
 
 
+def _is_api_error(status) -> bool:
+    """网络异常(None)或除 404 外的 4xx/5xx 都按 API 错误处理——未认证限流与
+    secondary rate limit 常返回 403 而非 429，误当"证据不存在"会误杀证据。"""
+    return status is None or (status >= 400 and status != 404)
+
+
 def _loads(text):
     try:
         v = json.loads(text or "{}")
@@ -99,7 +105,7 @@ def validate_row(row: dict, gh, log) -> list:
     if ref:
         repo, num = ref
         status, data = gh(f"/repos/{repo}/issues/{num}")
-        if status is None or status >= 500 or status == 429:
+        if _is_api_error(status):
             return ["skip:api-error"]
         if status == 404:
             actions.append("refute:issue-404")
@@ -126,7 +132,7 @@ def validate_row(row: dict, gh, log) -> list:
         if not isinstance(num, int):
             continue  # 无编号条目本来就无信号价值，直接丢弃不算动作
         status, data = gh(f"/repos/{row['project_id']}/pulls/{num}")
-        if status is None or status == 429 or (status and status >= 500):
+        if _is_api_error(status):
             kept.append(pr); continue  # API 错误：保留，不误杀
         if status == 404:
             evidence_changed = True
@@ -167,7 +173,7 @@ def validate_row(row: dict, gh, log) -> list:
                 ve["canonical_impl_url"] = ""
                 actions.append("blank:canonical_impl_url")
                 evidence_changed = True
-            elif status is None or status == 429 or (status and status >= 500):
+            elif _is_api_error(status):
                 pass  # API 错误：保留原值
 
     # 5. feature_gap 必须有核查证据（仅兜底 open 行；verified 行已由 verify 用全新

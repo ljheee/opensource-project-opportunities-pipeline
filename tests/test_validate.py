@@ -98,3 +98,16 @@ class TestValidateRow(unittest.TestCase):
         gh = FakeGh({"/repos/o/r/issues/42": (429, None)})
         actions = v.validate_row(self._row(), gh, lambda e: None)
         self.assertEqual(actions, ["skip:api-error"])
+
+    def test_issue_403_skips(self):
+        # 未认证限流/secondary rate limit 常返回 403：按 API 错误跳过，不误杀
+        gh = FakeGh({"/repos/o/r/issues/42": (403, None)})
+        actions = v.validate_row(self._row(), gh, lambda e: None)
+        self.assertEqual(actions, ["skip:api-error"])
+
+    def test_pull_403_keeps_pr(self):
+        gh = FakeGh({"/repos/o/r/issues/42": (200, {"state": "open", "labels": []}),
+                     "/repos/o/r/pulls/7": (403, None)})
+        row = self._row(maintainer_evidence='{"similar_prs": [{"number": 7, "merged": true}]}')
+        actions = v.validate_row(row, gh, lambda e: None)
+        self.assertNotIn("strip:similar_prs", actions)
