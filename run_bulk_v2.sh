@@ -76,7 +76,7 @@ run_v3_verify() {
       echo "[v3] 无待验证机会点，结束 verify 循环。"
       break
     fi
-    local opp_csv pending_file _VERIFY_TMP
+    local opp_csv pending_file _VERIFY_TMP judged_ids
     opp_csv=$(echo "$opp_ids" | tr '\n' ',' | sed 's/,$//')
     mkdir -p "$PIPELINE_DIR/data/verify_log"
     pending_file="$PIPELINE_DIR/data/verify_log/.pending_$(date -u +%Y%m%dT%H%M%S).json"
@@ -107,7 +107,12 @@ run_v3_verify() {
       echo "WARN: verify 重试 3 次仍失败，本批机会点停留 open，下次运行续处理。"
     python3 "$STAGES/verify_ingest.py" "$pending_file" --opp-ids "$opp_csv" || \
       echo "WARN: verify_ingest 返回非零退出码。"
-    all_opp_ids="${all_opp_ids:+$all_opp_ids,}$opp_csv"
+    # 只把本批已被裁决（verified/refuted）的 id 交给 validate：LLM 漏判的行停留 open，
+    # 若并入 scope 会被 validate 的 check5 误 refute（check5 仅豁免 verified）。
+    judged_ids=$(sqlite3 "$DB" \
+      "SELECT id FROM opportunities WHERE id IN ($opp_csv) AND status IN ('verified','refuted');" \
+      | tr '\n' ',' | sed 's/,$//')
+    all_opp_ids="${all_opp_ids:+$all_opp_ids,}$judged_ids"
     budget=$((budget - $(echo "$opp_ids" | wc -l | tr -d ' ')))
   done
   # 机器核账：verify 参与者（任意 value）∪ 今日新分析的机会点（含 low）

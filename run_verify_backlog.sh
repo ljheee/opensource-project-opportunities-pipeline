@@ -93,7 +93,12 @@ while [ "$processed" -lt "$BUDGET" ]; do
 
   python3 "$STAGES/verify_ingest.py" "$pending_file" --opp-ids "$opp_csv" || \
     echo "WARN: verify_ingest 返回非零退出码。"
-  all_opp_ids="${all_opp_ids:+$all_opp_ids,}$opp_csv"
+  # 只把本批已被裁决（verified/refuted）的 id 交给 validate：LLM 漏判的行停留 open，
+  # 若并入 scope 会被 validate 的 check5 误 refute（check5 仅豁免 verified）。
+  judged_ids=$(sqlite3 "$DB" \
+    "SELECT id FROM opportunities WHERE id IN ($opp_csv) AND status IN ('verified','refuted');" \
+    | tr '\n' ',' | sed 's/,$//')
+  all_opp_ids="${all_opp_ids:+$all_opp_ids,}$judged_ids"
   processed=$((processed + $(echo "$opp_ids" | wc -l | tr -d ' ')))
   echo "[backlog] 累计处理 $processed / $BUDGET"
 done
