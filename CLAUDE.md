@@ -29,6 +29,17 @@ bash run.sh 30 3     # 语义同 run_bulk_v2.sh：<总项目数> <每CLI任务�
 
 `run.sh` 会依次执行：git pull → init_db → 跨天任务迁移 → Stage 3 语义过滤 → Stage 2 调度（incremental，仅一次）→ Stage 4 批量循环（analyze.py 生成 draft → analyze_v2.md 精炼，每批一次 CLI，失败 60s/180s 退避重试）→ Stage 4.5 评分 → Stage 5 生成报告 → git commit/push。
 
+### 存量机会点再验证（v3）
+
+```bash
+bash run_verify_backlog.sh        # 默认：每批 20 条、总预算 100 条
+bash run_verify_backlog.sh 20 200
+```
+
+`.env` 新增开关：`ANALYZE_PROMPT_VERSION`（v2 默认 / v3 启用升级版精炼+对抗验证+机器核账）、`VERIFY_MAX_PER_RUN`（默认 50）、`VERIFY_BATCH_SIZE`（默认 20）。
+
+**灰度期防污染纪律**：v3 的 verify/validate 与 v2 共用同一张 opportunities 表，灰度期**同一天同一 DB 只允许跑一个版本**（跑 v3 的日子不用 run_bulk_v2.sh 跑 v2，反之亦然），否则对照组数据被污染。
+
 ### 存量消化（首次运行或积压较多时）
 
 ```bash
@@ -73,6 +84,8 @@ cat data/reports/2026-06-29.md
 | Stage 2 Schedule | `stages/schedule.py` | GitHub Actions | 根据项目状态变化（新 release、stars/issues/commit 变化）生成当日 `tasks` |
 | Stage 3 Filter | `prompts/filter.md` + LLM | 本地 | 语义过滤：判断项目是否为知名框架的移植版/替代实现，并填写 canonical 元数据 |
 | Stage 4 Analyze | `prompts/analyze.md` + LLM | 本地 | 深度分析：抓取目标项目、原版项目、peer 版本的 README/结构/issues，识别贡献机会 |
+| Stage 4.7 Verify | `prompts/verify_v3.md` + LLM → `stages/verify_ingest.py` | 本地 | 对抗验证：独立会话反驳 open 高/中价值机会点，裁决经脚本校验落 `data/verify_log/` |
+| Stage 4.8 Validate | `stages/validate.py` | 本地 | 机器核账：API 验证 issue/PR/URL/label 真伪，伪证据剥离或 refuted |
 | Stage 4.5 Score | `stages/scoring.py` | 本地 | 读取 `opportunities` 中的 evidence JSON，按规则计算 value/difficulty/urgency/maintainer_signal |
 | Stage 5 Report | `stages/report.py` | 本地 | 读取 SQLite 生成 `data/reports/YYYY-MM-DD.md` |
 
@@ -106,3 +119,4 @@ filtered_skip (terminal)
 - **运行前自动丢弃本地未提交修改**：两个脚本都会 `git checkout -- .` 再 `git pull --rebase`，本地改动会丢失。
 - **`scripts/` 目录是临时产物**：LLM 运行时可能生成临时脚本，已加入 `.gitignore`，不需要版本追踪。
 - **无单元测试**：项目没有正式测试，验证靠各 stage 的 `--dry-run`、SQLite 查询以及报告内容检查。
+- **find → verify 双阶段**：分析（find）与验证（verify）在不同 LLM 会话，验证者看不到分析推理、默认立场为反驳；验证状态复用 opportunities.status 枚举（verified/refuted），验证理由写 JSONL 日志不进 DB（零 DDL）。
