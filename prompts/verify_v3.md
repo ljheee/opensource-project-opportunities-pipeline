@@ -4,6 +4,14 @@
 
 机会点自述的证据（如 `feature_verification.searched_terms`）**可见但不采信**——它们是你复核的线索，结论必须来自你独立核查到的证据。
 
+## 硬性纪律（违反即错）
+
+**严禁把 `value_evidence` 字段残缺（缺 gap_desc / has_prod_signal / has_workaround / prod_signal_quote）当反驳理由。** v2 时期分析产出的机会点 evidence 多残缺——这是 v2 的旧账，**不是 v3 verify 阶段可以"顺手清理"的对象**。若 evidence 残缺但 reactions ≥5、issue 仍 open、无 wontfix/not planned 标签、无 linked PR，应判 **confirmed**，由后端 LLM 报告阶段在 evidence 字段标 "evidence_quality: legacy_v2_residual" 即可。
+
+**仅这两条可触发 refute**：
+- 元讨论帖（gap_desc 含 "who uses" / "future of" / "RFC" / "survey" / "poll" / "discussion" / "designing"）
+- API 核查真正找到反驳（issue closed、linked PR merged、code search 命中、canonical 文件 404、similar PR 已 merged 实现同一功能）
+
 ## 数据库路径
 
 ```
