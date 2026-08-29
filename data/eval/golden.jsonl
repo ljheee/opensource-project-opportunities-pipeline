@@ -14,3 +14,6 @@
 {"project": "owncast/owncast", "source_type": "issue", "source_ref": "https://github.com/owncast/owncast/issues/489", "label": "real", "notes": "Password protected livestream，43 reactions", "labeled_at": "2026-07-30"}
 {"project": "owncast/owncast", "source_type": "performance", "source_ref": "https://github.com/owncast/owncast/issues/980", "label": "real", "notes": "SRT 流支持，33 reactions", "labeled_at": "2026-07-30"}
 {"project": "hibiken/asynq", "source_type": "issue", "source_ref": "https://github.com/hibiken/asynq/issues/244", "label": "real", "notes": "Workflow 支持特性请求，29 reactions", "labeled_at": "2026-07-30"}
+{"project": "inngest/inngest", "source_type": "feature_gap", "source_ref": "canonical:Go/chasm", "label": "real", "notes": "inngest 无 chasm 风格可组合状态与历史子系统；temporal 仓 68 个 .go 文件于 chasm/ inngest 完全缺失", "labeled_at": "2026-08-30"}
+{"project": "flyteorg/flyte", "source_type": "feature_gap", "source_ref": "issue:5099", "label": "real", "notes": "当前 local-dev 需手动生成 SSL 证书 + 改 /etc/hosts，DX 痛点，issue 仍 open", "labeled_at": "2026-08-30"}
+{"project": "flyteorg/flyte", "source_type": "feature_gap", "source_ref": "issue:5822", "label": "real", "notes": "platform: linux/amd64,linux/arm64 因默认 buildx 不支持多架构而失效，构建限制明确", "labeled_at": "2026-08-30"}
