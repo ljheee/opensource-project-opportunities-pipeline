@@ -44,6 +44,16 @@ if GITHUB_TOKEN:
 
 ## 反驳清单（按 source_type）
 
+### 通用前置（先于所有反驳）：evidence 完整性兜底
+
+对**所有非 feature_gap 类型**（issue / performance / security / compatibility），先检查 `value_evidence`：
+
+- `gap_desc` 缺失、<20 字，或含元讨论关键词（"who uses X" / "future of X" / "RFC" / "survey" / "poll" / "discussion" / "designing"） → **refuted**（"evidence 残缺：gap_desc 元讨论帖不可作为贡献机会"）
+- `has_prod_signal` / `has_workaround` 任一为 null 或非 bool → **refuted**（"evidence 残缺：[字段名] 缺失"）
+- `has_prod_signal=true` 或 `has_workaround=true` 但 `prod_signal_quote` 缺失或 <30 字 → **refuted**（"evidence 残缺：prod_signal_quote 缺失或过短"）
+
+理由：analyze_v3.md 阶段本应拒收残缺 evidence，但 v2 历史数据可能漏过；verify 阶段兜底可避免误杀。**置信度来源**：直接看 evidence JSON 字段，不需要 API。
+
 ### feature_gap
 
 1. **功能是否已存在**：取 `value_evidence.feature_verification.searched_terms`，自补 1-2 个同义词/命名变体，在 code search 预算内搜 `<keyword> repo:<project_id>`；预算外用目录树 API（`GET /repos/<project_id>/git/trees/HEAD?recursive=1`）匹配。命中实现 → **refuted**。
@@ -65,6 +75,14 @@ if GITHUB_TOKEN:
 3. **affected_file**：`value_evidence.affected_file` 非空时，取其文件路径部分在目录树中确认存在；不存在 → **corrected**（置空该字段）。
 
 ## 裁决与写库
+
+**verdict 字段名（输出 JSON 时必填，必须从下方三者中选一个，不能写 `verified`/`refuted` 等 DB 状态名）：**
+
+- `confirmed` ← 反驳失败，机会点成立（最终 DB 状态 = `verified`）
+- `refuted` ← 找到反驳证据（最终 DB 状态 = `refuted`）
+- `corrected` ← 成立但 evidence 要修正（最终 DB 状态 = `verified`）
+
+> **注意**：`verified` 和 `refuted` 是**最终的 DB 状态名**，不是 verdict 字段值。看到 `refuted` verdict 时，UPDATE SQL 才写 `status='refuted'`；看到 `confirmed`/`corrected` verdict 时，UPDATE SQL 写 `status='verified'`。请勿混淆——一旦 verdict 字段写成 `verified`/`refuted` 状态名，校验脚本会拒绝落盘（quarantine 隔离）。
 
 对每条机会点给出三种裁决之一，**只允许 UPDATE，禁止 DELETE、禁止 INSERT、禁止动 OPP_ID_LIST 之外的行**：
 

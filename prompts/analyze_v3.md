@@ -99,6 +99,25 @@ ORDER BY o.project_id, o.source_type;
 
    **注意：** 精炼重写 `value_evidence` 时**必须保留 `feature_verification` 及其他未涉及 key**——该字段是后续机器校验的硬性检查项，丢失会导致你确认的机会点被自动 refute。
 
+8. **evidence 完整性硬约束（issue / performance / security / compatibility 通用，转 open 前必检）**
+
+   写 `value_evidence` 时**四个字段必须齐全且非空**（缺一即 DELETE，不允许转 open）：
+
+   | 字段 | 类型 | 必填条件 |
+   |------|------|---------|
+   | `gap_desc` | string | **必填**，≥20 字；非空、非元讨论（不含"discussion"/"RFC"/"survey"/"poll"/"who uses" 关键词） |
+   | `has_prod_signal` | bool | **必填** JSON `true` 或 `false`；`null`/`"maybe"`/`"unclear"` 一律视作字段缺失 |
+   | `has_workaround` | bool | **必填** JSON `true` 或 `false` |
+   | `prod_signal_quote` | string | 当 `has_workaround=true` **或** `has_prod_signal=true` 时必填，引用 issue/PR 原文 ≥30 字 |
+
+   **自动 DELETE 触发**（不依赖 v3 verify 阶段，refine 阶段直接拒收）：
+   - `gap_desc` 缺失、<20 字，或含元讨论关键词（"who uses X" / "future of X" / "RFC" / "survey" / "poll" / "discussion" / "designing"）→ 此类为不可执行的元讨论帖，不可作为贡献机会
+   - 四个必填 bool/string 字段任一缺失 → 视为 evidence 残缺，v3 verify 阶段会因"无 gap_desc 无法理解机会"误判 refuted，refine 阶段直接 DELETE 避免误杀
+   - `has_workaround=true` 但 `prod_signal_quote` 缺失或 <30 字 → DELETE
+   - `has_prod_signal=true` 但 `prod_signal_quote` 缺失或 <30 字 → DELETE
+
+   **判断依据：** 残缺 evidence 会让后续 v3 验证阶段无法判断"这个机会的可执行技术诉求是什么"，导致两种失败——LLM 误认（标 verified 但实际是调查帖）或 LLM 误杀（标 refuted 但实际有产线影响）。在 refine 阶段就拒收，比让 v3 verify 阶段猜要好。
+
 ## Evidence JSON 字段规范
 
 写回 DB 前，确保四个 `*_evidence` JSON 字段尽量包含以下信息。字段已有的就保留，缺失的请根据你读取到的上下文补充。
