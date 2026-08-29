@@ -44,15 +44,14 @@ if GITHUB_TOKEN:
 
 ## 反驳清单（按 source_type）
 
-### 通用前置（先于所有反驳）：evidence 完整性兜底
+### 通用前置（先于所有反驳）：仅元讨论帖检测
 
-对**所有非 feature_gap 类型**（issue / performance / security / compatibility），先检查 `value_evidence`：
+对**所有非 feature_gap 类型**（issue / performance / security / compatibility），先看 `value_evidence.gap_desc`：
 
-- `gap_desc` 缺失、<20 字，或含元讨论关键词（"who uses X" / "future of X" / "RFC" / "survey" / "poll" / "discussion" / "designing"） → **refuted**（"evidence 残缺：gap_desc 元讨论帖不可作为贡献机会"）
-- `has_prod_signal` / `has_workaround` 任一为 null 或非 bool → **refuted**（"evidence 残缺：[字段名] 缺失"）
-- `has_prod_signal=true` 或 `has_workaround=true` 但 `prod_signal_quote` 缺失或 <30 字 → **refuted**（"evidence 残缺：prod_signal_quote 缺失或过短"）
+- `gap_desc` 含元讨论关键词（"who uses X" / "future of X" / "RFC" / "survey" / "poll" / "discussion" / "designing"） → **refuted**（"元讨论帖不可作为贡献机会"）
+- 其他 evidence 残缺情况（gap_desc 缺失/短、has_* 字段空、prod_signal_quote 缺失）→ **不再作为 refute 理由**——交给后端 API 核查 + LLM 综合判断。理由：v2 时期遗留的机会点 evidence 多残缺（无 gap_desc / 无 prod_signal_quote），但 reactions 数高 + issue 仍 open 等信号足以判断其价值；之前强制要求 evidence 完整导致 v2 时期大量真机会被无差别判死。
 
-理由：analyze_v3.md 阶段本应拒收残缺 evidence，但 v2 历史数据可能漏过；verify 阶段兜底可避免误杀。**置信度来源**：直接看 evidence JSON 字段，不需要 API。
+**置信度来源**：直接看 gap_desc 文本关键词，不需要 API。
 
 ### feature_gap
 

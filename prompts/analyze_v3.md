@@ -99,24 +99,22 @@ ORDER BY o.project_id, o.source_type;
 
    **注意：** 精炼重写 `value_evidence` 时**必须保留 `feature_verification` 及其他未涉及 key**——该字段是后续机器校验的硬性检查项，丢失会导致你确认的机会点被自动 refute。
 
-8. **evidence 完整性硬约束（issue / performance / security / compatibility 通用，转 open 前必检）**
+8. **evidence 完整性软约束（issue / performance / security / compatibility 通用，转 open 前必填元讨论过滤）**
 
-   写 `value_evidence` 时**四个字段必须齐全且非空**（缺一即 DELETE，不允许转 open）：
+   写 `value_evidence` 时**强烈建议**填齐以下字段（让 v3 verify 阶段更好判断），但**不强制**——v2 时期已 open 的行（无新 evidence）仍可存活：
 
-   | 字段 | 类型 | 必填条件 |
-   |------|------|---------|
-   | `gap_desc` | string | **必填**，≥20 字；非空、非元讨论（不含"discussion"/"RFC"/"survey"/"poll"/"who uses" 关键词） |
-   | `has_prod_signal` | bool | **必填** JSON `true` 或 `false`；`null`/`"maybe"`/`"unclear"` 一律视作字段缺失 |
-   | `has_workaround` | bool | **必填** JSON `true` 或 `false` |
-   | `prod_signal_quote` | string | 当 `has_workaround=true` **或** `has_prod_signal=true` 时必填，引用 issue/PR 原文 ≥30 字 |
+   | 字段 | 类型 | 建议 |
+   |------|------|------|
+   | `gap_desc` | string | **强烈建议**填，≥20 字；**必填**非元讨论关键词（见下） |
+   | `has_prod_signal` | bool | 建议填 JSON `true` 或 `false`；缺失仍可存活 |
+   | `has_workaround` | bool | 建议填 JSON `true` 或 `false`；缺失仍可存活 |
+   | `prod_signal_quote` | string | 当 has_workaround/has_prod_signal=true 时**强烈建议**填，引用原文 ≥30 字 |
 
-   **自动 DELETE 触发**（不依赖 v3 verify 阶段，refine 阶段直接拒收）：
-   - `gap_desc` 缺失、<20 字，或含元讨论关键词（"who uses X" / "future of X" / "RFC" / "survey" / "poll" / "discussion" / "designing"）→ 此类为不可执行的元讨论帖，不可作为贡献机会
-   - 四个必填 bool/string 字段任一缺失 → 视为 evidence 残缺，v3 verify 阶段会因"无 gap_desc 无法理解机会"误判 refuted，refine 阶段直接 DELETE 避免误杀
-   - `has_workaround=true` 但 `prod_signal_quote` 缺失或 <30 字 → DELETE
-   - `has_prod_signal=true` 但 `prod_signal_quote` 缺失或 <30 字 → DELETE
+   **唯一硬性 DELETE 触发**（精炼阶段直接拒收）：
+   - `gap_desc` 含元讨论关键词（"who uses X" / "future of X" / "RFC" / "survey" / "poll" / "discussion" / "designing"）→ 此类为不可执行的元讨论帖，不可作为贡献机会
+   - **仅此一条**——其他字段缺失不再自动 DELETE（v2 历史行是残缺的，不能无差别判死）
 
-   **判断依据：** 残缺 evidence 会让后续 v3 验证阶段无法判断"这个机会的可执行技术诉求是什么"，导致两种失败——LLM 误认（标 verified 但实际是调查帖）或 LLM 误杀（标 refuted 但实际有产线影响）。在 refine 阶段就拒收，比让 v3 verify 阶段猜要好。
+   **不再**把"残缺 evidence"等同于"不是机会"。v2 时期的 evidence 不全，但 reactions 数 + issue 仍 open 等信号仍能让 v3 verify 阶段正确判断。残缺 evidence 交给 v3 verify 阶段处理（verify_v3.md 通用前置仍会做兜底）。
 
 ## Evidence JSON 字段规范
 
