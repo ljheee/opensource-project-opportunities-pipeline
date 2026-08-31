@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-08-29T16:10:33.034507+00:00",
+  "captured_at": "2026-08-31T11:32:11.052762+00:00",
   "rows": {
     "hyperjumptech/grule-rule-engine|feature_gap|canonical:Java/license": {
       "id": 1291,
@@ -114,6 +114,54 @@
       "status": "open",
       "value": "low",
       "last_seen_at": "2026-08-29T11:11:50.848605+00:00"
+    },
+    "encoredev/encore|issue|issue:9": {
+      "id": 3239,
+      "status": "verified",
+      "value": "high",
+      "last_seen_at": "2026-08-29T09:41:19.675393+00:00"
+    },
+    "open-telemetry/opentelemetry-js|issue|issue:2708": {
+      "id": 7900,
+      "status": "verified",
+      "value": "high",
+      "last_seen_at": "2026-08-30T04:16:11.172083+00:00"
+    },
+    "apache/iceberg-rust|issue|issue:1164": {
+      "id": 7150,
+      "status": "verified",
+      "value": "low",
+      "last_seen_at": "2026-08-30T03:30:04.209877+00:00"
+    },
+    "apache/arrow-go|issue|issue:30": {
+      "id": 2999,
+      "status": "verified",
+      "value": "high",
+      "last_seen_at": "2026-08-30T03:19:49.985412+00:00"
+    },
+    "stalwartlabs/stalwart|issue|issue:1179": {
+      "id": 5477,
+      "status": "verified",
+      "value": "medium",
+      "last_seen_at": "2026-08-30T03:03:53.945528+00:00"
+    },
+    "sidequestjs/sidequest|issue|issue:149": {
+      "id": 5926,
+      "status": "verified",
+      "value": "medium",
+      "last_seen_at": "2026-08-30T04:24:57.084456+00:00"
+    },
+    "temporalio/sdk-python|issue|issue:1502": {
+      "id": 8227,
+      "status": "verified",
+      "value": "medium",
+      "last_seen_at": "2026-08-31T07:05:55.030569+00:00"
+    },
+    "dmno-dev/varlock|issue|issue:75": {
+      "id": 7434,
+      "status": "verified",
+      "value": "high",
+      "last_seen_at": "2026-08-29T09:44:10.265126+00:00"
     }
   }
 }
