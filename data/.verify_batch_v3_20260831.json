@@ -1,0 +1,315 @@
+{
+ "177": {
+  "id": 177,
+  "pid": "PRQL/prql",
+  "stype": "issue",
+  "issue": 4150,
+  "source_ref": "https://github.com/PRQL/prql/issues/4150",
+  "state": "open",
+  "state_reason": null,
+  "labels": [
+   "bug"
+  ],
+  "reactions_total": 0,
+  "title_actual": "issue when using a DuckDb Macro",
+  "body_excerpt": "### What happened?  I have a macro defined in DuckDb to access Parquet files on s3\r \r ```\r CREATE MACRO cse(year, weekA, weekB) AS TABLE SELECT * FROM read_parquet(list_transform(\r             generate_series(weekA, weekB),\r             wee",
+  "timeline_linked_prs": []
+ },
+ "178": {
+  "id": 178,
+  "pid": "PRQL/prql",
+  "stype": "issue",
+  "issue": 905,
+  "source_ref": "https://github.com/PRQL/prql/issues/905",
+  "state": "open",
+  "state_reason": null,
+  "labels": [
+   "language-design",
+   "needs-discussion"
+  ],
+  "reactions_total": 0,
+  "title_actual": "`null`s in expressions",
+  "body_excerpt": "Continuing discussion from Discord: https://discord.com/channels/936728116712316989/1001415848902283284\r \r In short, we have to decide for each operator how it handles null inputs.\r \r My guiding principle would be that we should not throw e",
+  "timeline_linked_prs": []
+ },
+ "179": {
+  "id": 179,
+  "pid": "PRQL/prql",
+  "stype": "compatibility",
+  "issue": 410,
+  "source_ref": "https://github.com/PRQL/prql/issues/410",
+  "state": "open",
+  "state_reason": null,
+  "labels": [
+   "enhancement",
+   "compiler"
+  ],
+  "reactions_total": 0,
+  "title_actual": "Implementing versioning",
+  "body_excerpt": "Following on from https://github.com/prql/prql/issues/367, we'd like to add versioning to PRQL, so that we can make changes to the PRQL language without breaking lots of existing code.\r \r I'm not sure of the best way of doing this. Some ini",
+  "timeline_linked_prs": []
+ },
+ "180": {
+  "id": 180,
+  "pid": "PRQL/prql",
+  "stype": "security",
+  "issue": 3293,
+  "source_ref": "https://github.com/PRQL/prql/issues/3293",
+  "state": "open",
+  "state_reason": null,
+  "labels": [
+   "documentation"
+  ],
+  "reactions_total": 0,
+  "title_actual": "Where does documentation for `module` stand?",
+  "body_excerpt": "### What's up?\r \r I have a set of functions that I would like to include in each of my PRQL query files. I can't make it work.\r \r I attempted to paste one of the definitions of a module from the [Modules](https://prql-lang.org/book/referenc",
+  "timeline_linked_prs": []
+ },
+ "222": {
+  "id": 222,
+  "pid": "The-Pocket/PocketFlow",
+  "stype": "issue",
+  "issue": 74,
+  "source_ref": "https://github.com/The-Pocket/PocketFlow/issues/74",
+  "state": "open",
+  "state_reason": null,
+  "labels": [],
+  "reactions_total": 0,
+  "title_actual": "如何优雅的结束Flow",
+  "body_excerpt": "在运行官方提供的Research Supervisor Demo时正确结束会报错： 以下是结束什么都不return，然后flow不写结束流程，报错： ![Image](https://github.com/user-attachments/assets/6b951395-5959-421c-8730-84f4dd19575e) ![Image](https://github.com/user-attachments/assets/75ee086b-c004-4103-969e",
+  "timeline_linked_prs": []
+ },
+ "224": {
+  "id": 224,
+  "pid": "The-Pocket/PocketFlow",
+  "stype": "issue",
+  "issue": 54,
+  "source_ref": "https://github.com/The-Pocket/PocketFlow/issues/54",
+  "state": "open",
+  "state_reason": null,
+  "labels": [],
+  "reactions_total": 0,
+  "title_actual": "provide exec_res_list for batchflow?",
+  "body_excerpt": "In the current implementation, unlike BatchNode which collects exec_res_list, BatchFlow doesn't automatically collect results from subflows. Each subflow execution modifies the same shared dictionary, and it's up to users to organize how re",
+  "timeline_linked_prs": []
+ },
+ "225": {
+  "id": 225,
+  "pid": "The-Pocket/PocketFlow",
+  "stype": "issue",
+  "issue": 110,
+  "source_ref": "https://github.com/The-Pocket/PocketFlow/issues/110",
+  "state": "open",
+  "state_reason": null,
+  "labels": [],
+  "reactions_total": 0,
+  "title_actual": "PocketFlow编排能力进一步增强的思考",
+  "body_excerpt": "PocketFlow的设计理念非常出色。在当前Agent应用场景中，大部分都是基于工作流模式的，因此采用Flow的方式确实能带来显著效果。经过深入使用后，我认为可以进一步优化其组件设计，将其原子化程度提升到更高水平。理想状态下，开发者只需编写简单的流程编排代码即可完成复杂任务，例如：`QuestionNode >> LLMNode >> RAGNode`。更进一步说，如果原子化能力足够强大，甚至可以将Dify这样的低代码编排流程转换为PocketFlow的高代码实现。我已经验",
+  "timeline_linked_prs": []
+ },
+ "226": {
+  "id": 226,
+  "pid": "The-Pocket/PocketFlow",
+  "stype": "issue",
+  "issue": 39,
+  "source_ref": "https://github.com/The-Pocket/PocketFlow/issues/39",
+  "state": "open",
+  "state_reason": null,
+  "labels": [],
+  "reactions_total": 0,
+  "title_actual": "批次flow增加对结果的处理",
+  "body_excerpt": "`    add_faq_node = AddNewFAQNode(max_retries=3)      # Create batch flow that will run add_faq for each processed item     batch_flow = BatchAddFAQFlow(start=add_faq_node)`  在BatchAddFAQFlow中，我想在结束循环后在BatchAddFAQFlow中对所有的add_faq_node 的exec",
+  "timeline_linked_prs": []
+ },
+ "227": {
+  "id": 227,
+  "pid": "The-Pocket/PocketFlow",
+  "stype": "issue",
+  "issue": 105,
+  "source_ref": "https://github.com/The-Pocket/PocketFlow/issues/105",
+  "state": "open",
+  "state_reason": null,
+  "labels": [],
+  "reactions_total": 0,
+  "title_actual": "Is there a plan to support Checkpointers?",
+  "body_excerpt": "有没有计划支持Checkpointers 机制？ langgraph 文档：https://langchain-ai.github.io/langgraph/reference/checkpoints/ 用途主要是 human-in-loop 阶段的 interurpt 后的 resume（恢复现场）",
+  "timeline_linked_prs": []
+ },
+ "228": {
+  "id": 228,
+  "pid": "The-Pocket/PocketFlow",
+  "stype": "issue",
+  "issue": 59,
+  "source_ref": "https://github.com/The-Pocket/PocketFlow/issues/59",
+  "state": "open",
+  "state_reason": null,
+  "labels": [],
+  "reactions_total": 0,
+  "title_actual": "How do I implement a workflow process that requires user input?",
+  "body_excerpt": "First of all thanks for this lightweight excellent work. Now I have developed a workflow for text2sql based on the provided nodes and flows. Considering that the user's query request may not provide all the information, I have added a node ",
+  "timeline_linked_prs": []
+ },
+ "241": {
+  "id": 241,
+  "pid": "bytedance/UI-TARS",
+  "stype": "issue",
+  "issue": 193,
+  "source_ref": "https://github.com/bytedance/UI-TARS/issues/193",
+  "state": "open",
+  "state_reason": null,
+  "labels": [],
+  "reactions_total": 5,
+  "title_actual": "Request for Official MLX Support for UI-TARS",
+  "body_excerpt": "First of all, thank you for this amazing model - it works incredibly well and covers almost all our needs for UI testing.  I’m wondering if you have any plans to officially support the MLX format so it can run natively on Apple hardware?  C",
+  "timeline_linked_prs": []
+ },
+ "246": {
+  "id": 246,
+  "pid": "bytedance/UI-TARS",
+  "stype": "issue",
+  "issue": 216,
+  "source_ref": "https://github.com/bytedance/UI-TARS/issues/216",
+  "state": "open",
+  "state_reason": null,
+  "labels": [],
+  "reactions_total": 0,
+  "title_actual": "留个issue  期待开源UI-tars-2！！",
+  "body_excerpt": "",
+  "timeline_linked_prs": []
+ },
+ "248": {
+  "id": 248,
+  "pid": "bytedance/UI-TARS",
+  "stype": "compatibility",
+  "issue": 127,
+  "source_ref": "https://github.com/bytedance/UI-TARS/issues/127",
+  "state": "open",
+  "state_reason": null,
+  "labels": [],
+  "reactions_total": 0,
+  "title_actual": "Error 404 with UI-tars desktop 1.5",
+  "body_excerpt": "Im getting error 404 when using UI-tars 1.5, desktop version, after deploying a huggingface endpoint as explained in:  https://github.com/bytedance/UI-TARS/blob/main/README_deploy.md  error can be seen here: ![Image](https://github.com/user",
+  "timeline_linked_prs": [
+   {
+    "event": "cross-referenced",
+    "pr_num": 252,
+    "pr_state": "open",
+    "pr_merged_at": null
+   },
+   {
+    "event": "cross-referenced",
+    "pr_num": 253,
+    "pr_state": "open",
+    "pr_merged_at": null
+   }
+  ]
+ },
+ "253": {
+  "id": 253,
+  "pid": "kyutai-labs/moshi",
+  "stype": "issue",
+  "issue": 384,
+  "source_ref": "https://github.com/kyutai-labs/moshi/issues/384",
+  "state": "open",
+  "state_reason": null,
+  "labels": [],
+  "reactions_total": 7,
+  "title_actual": "Adding Vulkan and ROCm",
+  "body_excerpt": "Does it support ROCm and Vulkan?",
+  "timeline_linked_prs": []
+ },
+ "254": {
+  "id": 254,
+  "pid": "kyutai-labs/moshi",
+  "stype": "compatibility",
+  "issue": 335,
+  "source_ref": "https://github.com/kyutai-labs/moshi/issues/335",
+  "state": "open",
+  "state_reason": null,
+  "labels": [
+   "question"
+  ],
+  "reactions_total": 4,
+  "title_actual": "Rust streaming TTS",
+  "body_excerpt": "### Due diligence  - [x] I have done my due diligence in trying to find the answer myself.  ### Topic  The Rust implementation  ### Question  Hi all, I was wondering if there is interest in making a version of the moshi-server TTS (modules.",
+  "timeline_linked_prs": []
+ },
+ "255": {
+  "id": 255,
+  "pid": "kyutai-labs/moshi",
+  "stype": "issue",
+  "issue": 147,
+  "source_ref": "https://github.com/kyutai-labs/moshi/issues/147",
+  "state": "open",
+  "state_reason": null,
+  "labels": [
+   "question"
+  ],
+  "reactions_total": 4,
+  "title_actual": "The data for training Mimi",
+  "body_excerpt": "### Due diligence  - [x] I have done my due diligence in trying to find the answer myself.  ### Topic  The paper  ### Question  It seems that Mimi was trained independently of Moshi, but I couldn’t find the dataset used to train Mimi. Did I",
+  "timeline_linked_prs": []
+ },
+ "258": {
+  "id": 258,
+  "pid": "kyutai-labs/moshi",
+  "stype": "issue",
+  "issue": 183,
+  "source_ref": "https://github.com/kyutai-labs/moshi/issues/183",
+  "state": "open",
+  "state_reason": null,
+  "labels": [
+   "question"
+  ],
+  "reactions_total": 0,
+  "title_actual": "How to train this model",
+  "body_excerpt": "### Due diligence  - [X] I have done my due diligence in trying to find the answer myself.  ### Topic  The paper  ### Question   For mini model, moshi model, and tokenizer. I just wanna customize a little bit of model params of them",
+  "timeline_linked_prs": []
+ },
+ "260": {
+  "id": 260,
+  "pid": "kyutai-labs/moshi",
+  "stype": "security",
+  "issue": 355,
+  "source_ref": "https://github.com/kyutai-labs/moshi/issues/355",
+  "state": "open",
+  "state_reason": null,
+  "labels": [
+   "bug"
+  ],
+  "reactions_total": 0,
+  "title_actual": "CUDA_ERROR_NOT_FOUND: \"named symbol not found\" on Tesla T4 with CUDA 12.1",
+  "body_excerpt": "### Backend impacted  The Rust implementation  ### Operating system  Linux  ### Hardware  GPU with CUDA  ### Description  Hello,  I am encountering a persistent CUDA_ERROR_NOT_FOUND error when trying to run moshi-server after building from ",
+  "timeline_linked_prs": []
+ },
+ "261": {
+  "id": 261,
+  "pid": "kyutai-labs/moshi",
+  "stype": "security",
+  "issue": 315,
+  "source_ref": "https://github.com/kyutai-labs/moshi/issues/315",
+  "state": "open",
+  "state_reason": null,
+  "labels": [
+   "question"
+  ],
+  "reactions_total": 0,
+  "title_actual": "moshi-server word and endword latency",
+  "body_excerpt": "### Due diligence  - [x] I have done my due diligence in trying to find the answer myself.  ### Topic  The paper  ### Question  ![Image](https://github.com/user-attachments/assets/c535d24e-97c4-4e37-bf16-6303f5ab7b5e)  moshi-sever, compiled",
+  "timeline_linked_prs": []
+ },
+ "5817": {
+  "id": 5817,
+  "pid": "kyutai-labs/moshi",
+  "stype": "issue",
+  "issue": 384,
+  "source_ref": "issue:384",
+  "state": "open",
+  "state_reason": null,
+  "labels": [],
+  "reactions_total": 7,
+  "title_actual": "Adding Vulkan and ROCm",
+  "body_excerpt": "Does it support ROCm and Vulkan?",
+  "timeline_linked_prs": []
+ }
+}
