@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-01T07:03:37.600114+00:00",
+  "captured_at": "2026-09-01T09:39:36.379870+00:00",
   "rows": {
     "hyperjumptech/grule-rule-engine|feature_gap|canonical:Java/license": {
       "id": 1291,
@@ -180,6 +180,24 @@
       "status": "verified",
       "value": "high",
       "last_seen_at": "2026-09-01T03:06:40.046123+00:00"
+    },
+    "apache/couchdb-nano|compatibility|issue:193": {
+      "id": 8727,
+      "status": "verified",
+      "value": "medium",
+      "last_seen_at": "2026-09-01T08:27:00.194128+00:00"
+    },
+    "pdm-project/pdm|issue|issue:2142": {
+      "id": 3315,
+      "status": "verified",
+      "value": "medium",
+      "last_seen_at": "2026-09-01T07:24:23.723728+00:00"
+    },
+    "patroni/patroni|issue|issue:2567": {
+      "id": 5338,
+      "status": "verified",
+      "value": "high",
+      "last_seen_at": "2026-09-01T07:42:24.979656+00:00"
     }
   }
 }
