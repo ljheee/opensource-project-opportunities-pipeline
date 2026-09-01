@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-08-31T11:32:11.052762+00:00",
+  "captured_at": "2026-09-01T07:03:37.600114+00:00",
   "rows": {
     "hyperjumptech/grule-rule-engine|feature_gap|canonical:Java/license": {
       "id": 1291,
@@ -162,6 +162,24 @@
       "status": "verified",
       "value": "high",
       "last_seen_at": "2026-08-29T09:44:10.265126+00:00"
+    },
+    "apache/datafusion-ballista|issue|issue:890": {
+      "id": 8526,
+      "status": "verified",
+      "value": "medium",
+      "last_seen_at": "2026-09-01T02:45:45.986020+00:00"
+    },
+    "sqlfluff/sqlfluff|feature|issue:2538": {
+      "id": 5451,
+      "status": "verified",
+      "value": "high",
+      "last_seen_at": "2026-09-01T02:23:48.776903+00:00"
+    },
+    "moka-rs/moka|issue|issue:459": {
+      "id": 6593,
+      "status": "verified",
+      "value": "high",
+      "last_seen_at": "2026-09-01T03:06:40.046123+00:00"
     }
   }
 }
