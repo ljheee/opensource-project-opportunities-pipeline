@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-09-01T09:39:36.379870+00:00",
+  "captured_at": "2026-09-02T07:19:44.976758+00:00",
   "rows": {
     "hyperjumptech/grule-rule-engine|feature_gap|canonical:Java/license": {
       "id": 1291,
@@ -125,7 +125,7 @@
       "id": 7900,
       "status": "verified",
       "value": "high",
-      "last_seen_at": "2026-08-30T04:16:11.172083+00:00"
+      "last_seen_at": "2026-09-02T04:28:22.692174+00:00"
     },
     "apache/iceberg-rust|issue|issue:1164": {
       "id": 7150,
@@ -143,7 +143,7 @@
       "id": 5477,
       "status": "verified",
       "value": "medium",
-      "last_seen_at": "2026-08-30T03:03:53.945528+00:00"
+      "last_seen_at": "2026-09-02T03:36:12.840891+00:00"
     },
     "sidequestjs/sidequest|issue|issue:149": {
       "id": 5926,
@@ -161,7 +161,7 @@
       "id": 7434,
       "status": "verified",
       "value": "high",
-      "last_seen_at": "2026-08-29T09:44:10.265126+00:00"
+      "last_seen_at": "2026-09-02T05:31:49.112373+00:00"
     },
     "apache/datafusion-ballista|issue|issue:890": {
       "id": 8526,
@@ -198,6 +198,36 @@
       "status": "verified",
       "value": "high",
       "last_seen_at": "2026-09-01T07:42:24.979656+00:00"
+    },
+    "taskforcesh/bullmq|performance|issue:1670": {
+      "id": 9079,
+      "status": "verified",
+      "value": "high",
+      "last_seen_at": "2026-09-02T03:24:37.891944+00:00"
+    },
+    "BeanieODM/beanie|issue|issue:535": {
+      "id": 9109,
+      "status": "verified",
+      "value": "medium",
+      "last_seen_at": "2026-09-02T03:39:18.759736+00:00"
+    },
+    "healthchecks/healthchecks|issue|issue:479": {
+      "id": 5179,
+      "status": "verified",
+      "value": "medium",
+      "last_seen_at": "2026-09-02T04:15:26.405222+00:00"
+    },
+    "SeaQL/sea-orm|compatibility|issue:2404": {
+      "id": 8983,
+      "status": "verified",
+      "value": "medium",
+      "last_seen_at": "2026-09-02T02:33:46.372825+00:00"
+    },
+    "cadence-workflow/cadence-go-client|issue|issue:1407": {
+      "id": 2980,
+      "status": "verified",
+      "value": "medium",
+      "last_seen_at": "2026-09-02T02:39:38.699371+00:00"
     }
   }
 }
