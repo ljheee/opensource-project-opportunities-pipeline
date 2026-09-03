@@ -33,3 +33,11 @@ stages/filter*.py
 /.claude/
 data/verify_log/scratch/
 data/.apply_batch_*.py
+
+# LLM 临时脚本（verify / judge / apply 各种阶段生成的临时 .py 脚本）
+data/.verify_batch_*.py
+data/.judge_batch_*.py
+data/.apply_*.py
+data/.process_*.py
+data/.fetch_*.py
+data/.analyze_*.py
