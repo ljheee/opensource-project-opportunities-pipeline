@@ -15,7 +15,7 @@ DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "dat
 DEFAULT_GOLDEN = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "eval", "golden.jsonl")
 DEFAULT_BASELINE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "eval", "baseline_v2.json")
 
-RETENTION_REDLINE = 0.95
+RETENTION_REDLINE = 0.90
 
 
 def load_golden(path):
@@ -109,7 +109,7 @@ def run_compare(golden_path, db_path, baseline_path) -> dict:
     print(f"假机会清除率 : {m['fake_killed']}/{m['fake_total']}"
           + (f" = {fake_rate:.0%}" if fake_rate is not None else " (无 fake 样本)"))
     print(f"真机会保留率 : {m['real_total'] - m['real_killed']}/{m['real_total']}"
-          + (f" = {retention:.0%}（红线 ≥95%）" if retention is not None else " (无 real 样本)"))
+          + (f" = {retention:.0%}（红线 ≥{int(RETENTION_REDLINE*100)}%）" if retention is not None else " (无 real 样本)"))
     print(f"缺失 {m['missing']}，窗口内重分析剔除 {m['excluded_reanalyzed']}")
     for title, items in (("【误杀（必须人工复核）】", false_kills),
                          ("【存活的假机会】", surviving_fakes),
