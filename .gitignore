@@ -53,3 +53,5 @@ data/.process_*.py
 data/.fetch_*.py
 data/.analyze_*.py
 data/.run_*.py
+data/.judge_*.json
+data/.verify_*.json
