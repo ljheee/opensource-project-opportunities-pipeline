@@ -41,3 +41,15 @@ data/.apply_*.py
 data/.process_*.py
 data/.fetch_*.py
 data/.analyze_*.py
+
+# LLM 临时脚本全命名（兜底）
+data/.verify_*.py
+data/.verify_*.json
+data/.judge_*.py
+data/.stage4_*.py
+data/.stage4_v2_*.py
+data/.apply_*.py
+data/.process_*.py
+data/.fetch_*.py
+data/.analyze_*.py
+data/.run_*.py
