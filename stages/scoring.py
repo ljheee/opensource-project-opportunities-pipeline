@@ -27,6 +27,31 @@ EASY_KEYWORDS    = ["ui", "docs", "documentation", "example", "examples",
 
 LEVEL_UP = {"low": "medium", "medium": "high", "high": "high"}
 
+# Labels that signal a maintainer is actively recruiting outside help. analyze.py
+# collects against this same set, so the producer can never be narrower than the
+# consumer (a mismatch silently swallowed `enhancement`/`feature-request`/`accepted`).
+_WELCOME_LABELS = {"help wanted", "help-wanted", "good first issue", "good-first-issue",
+                   "enhancement", "feature-request", "feature request", "accepted",
+                   "pr welcome", "contributions welcome"}
+
+
+def _loads_evidence(raw):
+    """Parse an evidence blob defensively.
+
+    LLM-written evidence occasionally contains unescaped quotes or raw control
+    characters. Previously json.loads raised and the caller skipped the row entirely
+    — but rows are selected with `value IS NULL`, so a skipped row could never be
+    retried and was silently unscored forever (readyset#728, gobreaker#118).
+    Bad input now degrades to {} and the row still gets scored on whatever survived.
+    """
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
 
 def _contains_phrase(text: str, phrase: str) -> bool:
     """Word-boundary aware phrase match to avoid false positives like 'unintentional' matching 'intentional'.
@@ -184,9 +209,6 @@ def score_maintainer_signal(me: dict) -> str:
         if _matches_any(body, REJECT_KEYWORDS):
             signals.append(("rejected", 0))
 
-    _WELCOME_LABELS = {"help wanted", "help-wanted", "good first issue", "good-first-issue",
-                       "enhancement", "feature-request", "feature request", "accepted",
-                       "pr welcome", "contributions welcome"}
     if any(isinstance(lbl, str) and lbl.lower() in _WELCOME_LABELS for lbl in welcome_labels):
         signals.append(("welcoming", 0))
 
@@ -353,19 +375,10 @@ def run():
 
         scored = 0
         for row in rows:
-            try:
-                ve = json.loads(row["value_evidence"]      or "{}")
-                de = json.loads(row["difficulty_evidence"] or "{}")
-                ue = json.loads(row["urgency_evidence"]    or "{}")
-                me = json.loads(row["maintainer_evidence"] or "{}")
-            except (json.JSONDecodeError, ValueError):
-                print(f"  SKIP {row['id']}: evidence JSON 解析失败")
-                continue
-            # Ensure all evidence fields are dicts; non-dict valid JSON (list, str, int) → {}
-            if not isinstance(ve, dict): ve = {}
-            if not isinstance(de, dict): de = {}
-            if not isinstance(ue, dict): ue = {}
-            if not isinstance(me, dict): me = {}
+            ve = _loads_evidence(row["value_evidence"])
+            de = _loads_evidence(row["difficulty_evidence"])
+            ue = _loads_evidence(row["urgency_evidence"])
+            me = _loads_evidence(row["maintainer_evidence"])
 
             try:
                 project_adopted = _project_is_adopted(

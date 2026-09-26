@@ -369,6 +369,97 @@ def _make_gap_desc(source_type: str, title: str, body: str | None = None,
     return f"User-reported issue or requested improvement: {title}"
 
 
+# Labels that mean a maintainer is actively recruiting outside help. This set is kept
+# identical to scoring._WELCOME_LABELS: analyze.py is the producer and scoring.py the
+# consumer, so a narrower producer silently drops signals the consumer expects
+# (enhancement / feature-request / accepted were collected by nobody).
+WELCOME_LABELS = {"help wanted", "help-wanted", "good first issue", "good-first-issue",
+                  "enhancement", "feature-request", "feature request", "accepted",
+                  "pr welcome", "contributions welcome"}
+
+# author_association values that reliably indicate a maintainer. CONTRIBUTOR is included
+# on purpose: on company-hosted projects the founder and core maintainers often hold no
+# org role, so they report as CONTRIBUTOR. restate's founder (tillrohrmann) announced
+# "flow control features have been released with v1.7" in exactly such a comment, and the
+# old OWNER/MEMBER/COLLABORATOR-only filter discarded it — which is how restate#3291
+# entered draft as an unfulfilled ask. Order encodes confidence: high-confidence
+# maintainers are surfaced first by collect_maintainer_responses.
+MAINTAINER_ASSOCIATIONS = ("OWNER", "MEMBER", "COLLABORATOR", "CONTRIBUTOR")
+_HIGH_CONFIDENCE_ASSOCIATIONS = ("OWNER", "MEMBER", "COLLABORATOR")
+
+MAX_MAINTAINER_RESPONSES = 2
+
+# Comments that carry a decision stronger than a general reply: the maintainer either
+# declared the ask delivered/refuted, or explicitly invited outside help. These are
+# ranked ahead of routine replies so they survive the response cap — a maintainer saying
+# "flow control features have been released with v1.7" is worth far more than the third
+# "thanks for the feedback" in the thread. NOTE: scoring.py's WELCOME_KEYWORDS/REJECT_KEYWORDS
+# have no "already shipped" vocabulary, so such a comment is collected here but not yet
+# acted on downstream; that gap is tracked separately.
+_STRONG_SIGNAL_KEYWORDS = [
+    # delivered / refuted
+    "released", "shipped", "now available", "is implemented", "has been implemented",
+    "already fixed", "already merged", "was merged", "fixed in", "landed in",
+    "duplicate", "won't fix", "won’t fix", "wontfix", "out of scope", "not planned",
+    "not in scope", "by design", "we are not", "not considering",
+    # explicitly recruiting
+    "please go ahead", "go ahead and", "feel free to", "happy to accept",
+    "would welcome", "looking forward to", "assign", "i'll pick", "i will pick",
+]
+
+
+def _strong_signal_rank(body: str) -> int:
+    """Sort rank for a maintainer comment: 0 = explicit decision, 1 = routine reply.
+    Lower sorts first. A maintainer stating the ask is already delivered or refused
+    outranks any polite acknowledgement, so it survives the response cap."""
+    if not body:
+        return 1
+    lowered = body.lower()
+    return 0 if any(kw in lowered for kw in _STRONG_SIGNAL_KEYWORDS) else 1
+
+
+def is_maintainer_signal(association: str) -> bool:
+    """Whether an author_association value can carry maintainer intent."""
+    return (association or "").upper() in MAINTAINER_ASSOCIATIONS
+
+
+def _collect_welcome_labels(labels) -> list:
+    """Keep labels that mean outside help is welcome, preserving their original casing."""
+    return [l for l in labels
+            if isinstance(l, str) and l.lower() in WELCOME_LABELS]
+
+
+def collect_maintainer_responses(comments, limit: int = MAX_MAINTAINER_RESPONSES) -> list:
+    """Pick the maintainer comments worth recording, most authoritative first.
+
+    The previous implementation scanned only comments[:10] and stopped once it had two
+    hits, so a maintainer who replied on comment #11 was invisible no matter their role.
+    Scan everything, rank by decision weight first and association confidence second, and
+    keep the original ordering signal in `author_association` so downstream scoring can
+    weigh it.
+    """
+    picked = []
+    for idx, comment in enumerate(comments or []):
+        if not isinstance(comment, dict):
+            continue
+        assoc = (comment.get("author_association") or "").upper()
+        if not is_maintainer_signal(assoc):
+            continue
+        body = comment.get("body") or ""
+        picked.append((
+            _strong_signal_rank(body),
+            0 if assoc in _HIGH_CONFIDENCE_ASSOCIATIONS else 1,
+            idx,
+            {
+                "body_quote": body[:200],
+                "author_association": assoc,
+                "author": (comment.get("user") or {}).get("login", ""),
+            },
+        ))
+    picked.sort(key=lambda t: (t[0], t[1], t[2]))
+    return [entry for _, _, _, entry in picked[:limit]]
+
+
 def _make_why_hard(source_type: str, title: str, body: str | None,
                    has_canonical: bool, approach_file: str = "") -> str:
     """Generate a why_hard hint for difficulty_evidence."""
@@ -419,7 +510,7 @@ def _pr_rejection_comment(project_id: str, pr_number: int) -> str:
         if not isinstance(item, dict):
             continue
         author_assoc = item.get("author_association", "")
-        if author_assoc not in ("OWNER", "MEMBER", "COLLABORATOR"):
+        if not is_maintainer_signal(author_assoc):
             continue
         body = (item.get("body") or "").lower()
         if any(_contains_phrase(body, kw) for kw in _REJECT_KEYWORDS):
@@ -626,17 +717,10 @@ def analyze_project(conn: sqlite3.Connection, task: dict, dry_run: bool = False)
 
         source_type = classify_issue(title, body)
 
-        welcome_labels = [l for l in labels if l.lower() in {"help wanted", "help-wanted", "good first issue", "good-first-issue"}]
-        _, comments = gh_get(f"/repos/{project_id}/issues/{issue_num}/comments", params={"per_page": 50})
+        welcome_labels = _collect_welcome_labels(labels)
+        _, comments = gh_get(f"/repos/{project_id}/issues/{issue_num}/comments", params={"per_page": 100})
         comments = comments if isinstance(comments, list) else []
-        maintainer_responses = []
-        for comment in comments[:10]:
-            if not isinstance(comment, dict):
-                continue
-            if comment.get("author_association") in ("OWNER", "MEMBER", "COLLABORATOR"):
-                maintainer_responses.append({"body_quote": (comment.get("body") or "")[:200]})
-            if len(maintainer_responses) >= 2:
-                break
+        maintainer_responses = collect_maintainer_responses(comments)
 
         similar_prs = _search_similar_prs(project_id, title)
 
@@ -657,7 +741,9 @@ def analyze_project(conn: sqlite3.Connection, task: dict, dry_run: bool = False)
         issue_count = _count_related_issues(issues, title, body, exclude_number=issue_num)
         gap_desc = _make_gap_desc(source_type, title, body)
         approach_file = _find_approach_file(target_paths, title, body) if source_type == "performance" else ""
-        why_hard = _make_why_hard(source_type, title, body, has_canonical=False, approach_file=approach_file)
+        why_hard = _make_why_hard(source_type, title, body,
+                                  has_canonical=not is_canonical_unknown(canonical_url),
+                                  approach_file=approach_file)
 
         value_evidence = json.dumps({
             "canonical_impl_url": "",
