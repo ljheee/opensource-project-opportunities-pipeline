@@ -48,6 +48,8 @@ data/.verify_*.json
 data/.judge_*.py
 data/.stage4_*.py
 data/.stage4_v2_*.py
+data/.s4v2_*.py
+data/.s4v2_*.json
 data/.apply_*.py
 data/.process_*.py
 data/.fetch_*.py
@@ -55,3 +57,13 @@ data/.analyze_*.py
 data/.run_*.py
 data/.judge_*.json
 data/.verify_*.json
+# DB 手工备份（判定批次前后快照，不需要版本追踪）
+data/.pipeline.db.bak*
+data/.gh_*.json
+data/.gh_*.py
+data/.tree_*.json
+data/.v3_*/
+data/.v3_*
+data/.stage4_v2_*.json
+data/.s4v2_*.txt
+data/.gh*.py
