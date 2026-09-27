@@ -126,10 +126,24 @@ PENDING_FILE
 [
   {"opportunity_id": 123, "verdict": "refuted",
    "reason": "code search 命中 pkg/breaker/circuit.go，功能已实现",
-   "checks": ["code_search:circuit-breaker", "canonical_impl_url:200"],
+   "checks": ["code_search:hit", "canonical_url:200"],
    "corrections": [], "degraded": false}
 ]
 ```
+
+**`checks` 必须使用下列受控词表的 `<检查项>:<结果>` 形式**，检查项只能取自这 14 个：
+
+```
+meta_discussion  issue_state  issue_labels  linked_pr  reactions_calibration
+similar_prs      code_search  canonical_url  cve_format  affected_file
+comments         maintainer_response  quote_verbatim  repo_tree
+```
+
+结果部分建议用固定值以便聚合：`issue_state` 用 `open`/`closed`/`completed`/`not_planned`；`issue_labels` 写命中的标签名或 `none`；`linked_pr` 用 `present`/`none`；`code_search` 用 `hit`/`miss`；`canonical_url` 用 `200`/`404`；其余可用简短描述。
+
+不要自造同义写法（`issue:open`、`state:open`、`timeline:无cross-referenced` 这类历史变体一律作废）。词表外的检查项请塞进 `reason` 文字里说明，不要塞进 `checks`。
+
+**`corrections` 统一写成字符串**：字段改动用 `<字段路径> -> <新值>`，置空用 `blank:<字段路径>`，例如 `"value_evidence.canonical_impl_url -> https://github.com/redis/redis/blob/unstable/src/script.c"`。不要写成 `{"field": ..., "new": ...}` 对象。
 
 写文件用 Python（`json.dump` 保证转义正确），不要手拼 JSON 字符串。OPP_ID_LIST 中每条都必须有对应裁决。
 
