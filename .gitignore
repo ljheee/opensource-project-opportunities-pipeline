@@ -67,3 +67,5 @@ data/.v3_*
 data/.stage4_v2_*.json
 data/.s4v2_*.txt
 data/.gh*.py
+data/.s4_*.py
+data/.s4*.py
