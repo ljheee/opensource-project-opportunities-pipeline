@@ -203,9 +203,12 @@ ORDER BY o.project_id, o.source_type;
 
 ### maintainer_evidence
 
-`similar_prs` 包含两类历史 PR：
+`similar_prs` 是 analyze.py 用**模糊搜索**（`repo:X is:pr is:merged "<诉求标题前 40 字>"`）捞回来的历史 PR，
+命中的是「标题里碰巧有共同词」的 PR——实测大量是依赖升级、重构、RFC，与本诉求无关。
+**不要把 `merged: true` 当成「维护者欢迎这类贡献」的证据。** 它只说明「有人提过类似功能」：
 
-- `merged: true`：曾经有人提交过类似功能并被合并 → 说明维护者欢迎这类贡献。
+- `merged: true`：**先读标题**。标题命中本诉求（逐字复述了要加的那件事）→ **诉求已被交付，丢弃这条机会点**；
+  标题无关 → 忽略，不要因为它判 `welcoming`。
 - `merged: false`（关闭未合并）：说明维护者可能拒绝过类似方案。此时 `maintainer_comment` 会尽量抓取维护者的拒绝理由（如 "out of scope"、"won't fix"、"not planned"）。
 
 ```json
@@ -228,9 +231,11 @@ ORDER BY o.project_id, o.source_type;
 ```
 
 **判断规则**：
-- `merged=true` 且 `age_days < 365` → `welcoming`
 - `maintainer_comment` 含拒绝语义 → `rejected`
-- `welcome_labels` 非空 或 `maintainer_responses` 含正向表态 → `welcoming`
+- `welcome_labels` 非空 或 `maintainer_responses` 含正向表态（维护者明说欢迎 / 邀请外部提 PR）→ `welcoming`
+- `merged: true` **不产生** `welcoming`（理由见上）；它只用来判断「诉求是否已被交付」
+- 维护者在 `maintainer_responses` 里明确说本诉求**已发布 / 已实现 / 已修复**（released / shipped / fixed in v… / has been implemented，
+  且指向的是本诉求而不是别的 issue）→ **诉求已交付，丢弃这条机会点**
 - 两者冲突时，以最新（`age_days` 最小）的为准
 
 ## 输出操作

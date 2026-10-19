@@ -132,7 +132,8 @@ UPDATE projects SET status = 'analyzing'                        WHERE id = '<pro
   - 判断是否 merged（**API 差异注意**）：
     - Search API（`/search/issues`）返回的 PR 对象：顶层 `merged_at` 始终为 null，需检查 `pr.get("pull_request", {}).get("merged_at") is not None`；若 `pull_request` 键缺失（Search API 对某些 PR 不返回此子对象），`.get()` 返回 None，视为未合并
     - 降级 Pulls API（`/repos/.../pulls`）返回的 PR 对象：直接检查顶层 `pr["merged_at"] != null`
-  - merged → `{"merged": true, "age_days": <从 merged_at 到今日的天数>, "maintainer_comment": ""}` （Search API 取 `pr.get("pull_request", {}).get("merged_at")`；若结果为 None，表示该 PR 实际未合并，按 closed without merge 处理。Pulls API 取 `pr["merged_at"]`）
+  - merged → `{"number": <pr_number>, "title": "<PR 标题原文>", "url": "https://github.com/<owner>/<repo>/pull/<pr_number>", "merged": true, "age_days": <从 merged_at 到今日的天数>, "maintainer_comment": ""}` （Search API 取 `pr.get("pull_request", {}).get("merged_at")`；若结果为 None，表示该 PR 实际未合并，按 closed without merge 处理。Pulls API 取 `pr["merged_at"]`）
+  - **必须带 `number` + `title` + `url`**：没有这三样等于没记录任何可核验的事实。历史数据里 6975 条 similar_prs 有 6039 条是 `{"merged": true, "age_days": N}` 这样的裸条目——无号无标题，既无法确认这个 PR 是否存在，也无法判断它在不在说本诉求，而 scoring.py 恰恰把 `merged: true` 直接读成「维护者欢迎」，于是这些凑出来的数字白送了一轮 value 抬升。**凑不出真实的 PR 就不要写这条。**
   - `age_days` 计算**必须使用 UTC 时间**：`(datetime.now(timezone.utc) - datetime.fromisoformat(merged_at.replace("Z", "+00:00"))).days`（需 `from datetime import datetime, timezone`）；禁止使用 `datetime.now()` 本地时间，否则在非 UTC 机器上会有 0~1 天偏差
   - closed without merge：调用 `GET /repos/<project_id>/issues/<pr_number>/comments?per_page=100`，**仅**检查 `author_association` 为 `OWNER`/`COLLABORATOR`/`MEMBER` 的评论（即 maintainer 评论）是否含拒绝语义（"out of scope"/"won't fix"/"by design" 等）；不检查 PR body（body 是 PR 作者写的，不代表 maintainer 意见）
     - 含拒绝语义 → `{"merged": false, "age_days": <从 pr["closed_at"] 到今日的天数（两种 API 均在顶层；age_days 同样必须用 UTC now 计算）>, "maintainer_comment": "<引用原文>"}`
@@ -331,10 +332,14 @@ WHERE id = '<project_id>' AND status = 'analyzing';
 - `medium`：有生产信号但有 workaround；或无生产信号但有 workaround
 - `low`：无生产信号且无 workaround（纯增强型功能）
 
-**maintainer_signal（由 scoring.py 自动计算，取值：`welcoming` / `rejected` / `unknown`）：**
-- `welcoming`：有 merged 的相关 PR；或 maintainer 回复含欢迎贡献语义；或 issue 有 help-wanted/good-first-issue 标签
+**maintainer_signal（由 scoring.py 自动计算，取值：`welcoming` / `rejected` / `shipped` / `unknown`）：**
+- `welcoming`：maintainer 回复含欢迎贡献语义；或 issue 有 help-wanted/good-first-issue 标签
 - `rejected`：有 closed-without-merge 且含明确拒绝语义的 PR；或 maintainer 回复含拒绝语义（优先级高于 welcoming）
+- `shipped`：maintainer 明确说该诉求已发布 / 已实现 / 已修复（released / shipped / fixed in v… / has been implemented）。**这是「证据里有交付陈述」的提示，不是判死**——scoring.py 看不到诉求正文，最终由 verify 阶段读完整讨论串裁决
 - `unknown`：无任何信号
+
+> **`merged: true` 不再是 welcoming 信号。** similar_prs 来自模糊搜索，命中的是「标题里碰巧有共同词」的 PR
+> （大量是依赖升级、重构、RFC）；而当它真的相关时，它说明的是**诉求已被交付**——那属于该丢弃的机会点，不是欢迎的证据。
 
 ## 注意事项
 

@@ -678,11 +678,16 @@ Step 7: 综合输出
 
 | 条件 | 结果 |
 |------|------|
-| `similar_prs` 有 merged=true AND age_days < 365 | `welcoming` |
 | `similar_prs` 有 merged=false AND maintainer_comment 含拒绝语义 | `rejected` |
 | `welcome_labels` 非空 OR `maintainer_responses` 含正向表态 | `welcoming` |
-| welcoming + rejected 同时存在 | 取 age_days 最小的结论 |
+| `maintainer_responses` 含交付陈述（released / shipped / fixed in v… / has been implemented），且指向本诉求 | `shipped` |
+| rejected / shipped / welcoming 同时存在 | 优先级 rejected > shipped > welcoming；同类型内取 age_days 最小的 |
 | 以上都无 | `unknown` |
+
+> **`similar_prs` 的 merged=true 不产生任何信号。** 它来自 analyze.py 的模糊搜索
+> `repo:X is:pr is:merged "<诉求标题前 40 字>"`，命中的是标题里碰巧有共同词的 PR；
+> 而当它真的相关时，它说明的是**诉求已被交付**（该丢弃的机会点），不是「维护者欢迎」。
+> 2026-10-19 修正：移除前 1199 条 `welcoming` 里有 633 条完全来自这条噪音路径。
 
 **maintainer_signal 对 value 的修正**：
 
@@ -690,6 +695,7 @@ Step 7: 综合输出
 |--------|----------|
 | `welcoming` | value 上调一级（low→medium，medium→high） |
 | `rejected` | `status = 'obsolete'`，不出现在报告里 |
+| `shipped` | **不修正、不判死**——只是「证据里有交付陈述」的提示。scoring.py 看不到诉求正文，无法确认交付针对的是这一条诉求；且维护者可能一边宣布功能已发布、一边邀请补文档。裁决由 verify 阶段读完整讨论串后做 |
 | `neutral` / `unknown` | 不修正 |
 
 ---
