@@ -234,8 +234,22 @@ ORDER BY o.project_id, o.source_type;
 - `maintainer_comment` 含拒绝语义 → `rejected`
 - `welcome_labels` 非空 或 `maintainer_responses` 含正向表态（维护者明说欢迎 / 邀请外部提 PR）→ `welcoming`
 - `merged: true` **不产生** `welcoming`（理由见上）；它只用来判断「诉求是否已被交付」
-- 维护者在 `maintainer_responses` 里明确说本诉求**已发布 / 已实现 / 已修复**（released / shipped / fixed in v… / has been implemented，
-  且指向的是本诉求而不是别的 issue）→ **诉求已交付，丢弃这条机会点**
+- 维护者在 `maintainer_responses` 里明确说某个功能**已发布 / 已实现 / 已修复**（released / shipped / fixed in v… / has been implemented）→
+  只有**交付的就是本条机会点要的这件事**时才 **丢弃这条机会点**。判断必须落到具体对象上，不能只看「有交付陈述」：
+  - 交付的是**同一件事**（诉求是「加 opensearch input 组件」，维护者说「opensearch input 已发布」）→ **丢弃**
+  - 交付的是**相邻的另一件事** → **保留**。这是实测中误判的主因：
+    - 交付了 opensearch **output**，诉求是 **input** 组件（connect#978）
+    - 交付了 **client-side** websocket，诉求是 **server-side**（duckle#192）
+    - 交付了 **concurrency** limits，诉求是 **rate** limits（restate#3291）
+    - 交付了 **Postgres/MySQL** pushdown，诉求是 ClickHouse/Snowflake（duckle#115）
+    - 维护者说「general path 已修，**但 resolver bug 仍在**」，诉求是 resolver bug → **保留**
+  - 交付的是**诉求的一部分**、另一部分仍待做 → **保留**（维护者同时邀请补文档、做可行性研究的也算）
+  - 语气不确定（「可能已经修好了，麻烦确认一下」）→ **保留**
+  - 「我本地改了但没提交」→ **保留**（这正是可贡献的入口）
+  - 引用的是**别的** issue / PR（"that one was fixed by #1325, while this is …"）→ **保留**
+  > 反面教材：把「有交付陈述」直接当「诉求已交付」，会让 10 条命中里 9 条误杀——
+  > 而这些行机会点的 `value_evidence.gap_desc` 里，细心的分析早已把「交付了什么、还差什么」写清楚了。
+  > **先读 gap_desc，再看维护者的话。**
 - 两者冲突时，以最新（`age_days` 最小）的为准
 
 ## 输出操作

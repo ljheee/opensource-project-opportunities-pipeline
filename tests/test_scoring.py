@@ -192,71 +192,49 @@ class TestMergedPrIsNotAWelcomeSignal(unittest.TestCase):
         self.assertEqual(signal, "welcoming")
         self.assertEqual(scoring.score_value(ve, signal), "high")
 
-    def test_response_body_field_fallback(self):
-        """历史行（含 v3 verify 写入的）只写 body，不写 body_quote。"""
-        me = {"maintainer_responses": [
-            {"body": "out of scope, this is by design"}]}
-        self.assertEqual(scoring.score_maintainer_signal(me), "rejected")
 
+class TestMechanicalLayerDoesNotJudgeDelivery(unittest.TestCase):
+    """交付判断归语义层（精炼 + verify），scoring.py 不做。
 
-class TestShippedVocabulary(unittest.TestCase):
-    """维护者宣布「已交付」的表述此前整条链路无人识别。"""
+    曾经试过在 scoring.py 里用关键词识别「维护者说已交付」，实测 10 条命中里
+    **只有 1 条是真的**（#914 ergo#213 的 "fixed in v310"）。其余 9 条的误命中模式
+    完全一致：维护者宣布交付的是**相邻的另一件事**——
 
-    def test_release_announcement_is_shipped(self):
+        #11220 交付了 opensearch **output**，诉求是 **input** 组件
+        #7728  交付了 **client-side** websocket，诉求是 **server-side**
+        #11789 交付了 **concurrency** limits，诉求是 **rate** limits
+        #5948  交付了 **Postgres/MySQL** pushdown，诉求是 ClickHouse/Snowflake
+
+    而每一行的 `value_evidence.gap_desc` 里，细心的分析师早已把这个区分写清楚了
+    （#5948 的 gap_desc 原话："but engines like ClickHouse and Snowflake still lack…"）。
+    机械检测器在重复一个已经存在于数据里的判断，而且做错了 9 次。
+    护栏怎么加都救不回来——10% 精度的信号不该存在，更不该改 value。
+    """
+
+    def test_release_announcement_does_not_change_the_signal(self):
         me = {"maintainer_responses": [
             {"body_quote": "The first flow control features have been released with v1.7"}]}
-        self.assertEqual(scoring.score_maintainer_signal(me), "shipped")
+        self.assertEqual(scoring.score_maintainer_signal(me), "unknown")
 
-    def test_fixed_in_version_is_shipped(self):
+    def test_fixed_in_version_does_not_change_the_signal(self):
         me = {"maintainer_responses": [{"body_quote": "fixed in v310"}]}
-        self.assertEqual(scoring.score_maintainer_signal(me), "shipped")
-
-    def test_future_release_is_not_shipped(self):
-        me = {"maintainer_responses": [
-            {"body_quote": "once it is released, we'll be able to add this"}]}
         self.assertEqual(scoring.score_maintainer_signal(me), "unknown")
 
-    def test_negated_release_is_not_shipped(self):
+    def test_delivery_of_a_different_thing_does_not_change_the_signal(self):
         me = {"maintainer_responses": [
-            {"body_quote": "as the 1.5.0 is still not released, please pin 1.4.0"}]}
+            {"body_quote": "Shipped to main in cd59dc4: client-side src.websocket"}]}
         self.assertEqual(scoring.score_maintainer_signal(me), "unknown")
 
-    def test_hedged_statement_is_not_shipped(self):
-        me = {"maintainer_responses": [
-            {"body_quote": "It's possible this issue has been fixed in the latest release. "
-                          "If you can verify and let us know whether this is still an issue"}]}
-        self.assertEqual(scoring.score_maintainer_signal(me), "unknown")
-
-    def test_local_patch_without_commit_is_not_shipped(self):
-        me = {"maintainer_responses": [
-            {"body_quote": "I've already fixed this :) The patch was a bit messy "
-                          "so I did not commit it to 2.10"}]}
-        self.assertEqual(scoring.score_maintainer_signal(me), "unknown")
-
-    def test_delivery_of_another_issue_is_not_shipped(self):
-        me = {"maintainer_responses": [
-            {"body_quote": "that one was snapshot retention and was fixed by #1325 in v0.5.14, "
-                          "while this is EnforceL0RetentionByTime"}]}
-        self.assertEqual(scoring.score_maintainer_signal(me, own_issue=1270), "unknown")
-
-    def test_delivery_of_own_issue_is_shipped(self):
-        me = {"maintainer_responses": [{"body_quote": "the problem was fixed in #4113"}]}
-        self.assertEqual(scoring.score_maintainer_signal(me, own_issue=4113), "shipped")
-
-    def test_shipped_does_not_kill_the_row(self):
-        """shipped 是可见信号，不是判死：scoring.py 看不到诉求正文，
-        维护者也可能一边宣布功能已发布、一边邀请补文档。裁决留给 verify 阶段。"""
-        me = {"maintainer_responses": [
-            {"body_quote": "The first flow control features have been released with v1.7"}]}
-        signal = scoring.score_maintainer_signal(me)
-        self.assertEqual(signal, "shipped")
-        self.assertEqual(scoring._writeback_status(signal, "open"), "open")
-        self.assertEqual(scoring._writeback_status(signal, "verified"), "verified")
-
-    def test_shipped_outranks_welcoming(self):
-        me = {"maintainer_responses": [
-            {"body_quote": "has been implemented already, and feel free to send docs fixes"}]}
-        self.assertEqual(scoring.score_maintainer_signal(me), "shipped")
+    def test_signal_domain_stays_three_values(self):
+        """信号取值仍只有 rejected / welcoming / unknown 三个。"""
+        allowed = {"rejected", "welcoming", "unknown"}
+        statements = [
+            "has been released with v1.7", "fixed in v310", "already implemented",
+            "shipped to main in cd59dc4", "the feature was merged upstream",
+        ]
+        for st in statements:
+            me = {"maintainer_responses": [{"body_quote": st}]}
+            self.assertIn(scoring.score_maintainer_signal(me), allowed)
 
 
 if __name__ == "__main__":

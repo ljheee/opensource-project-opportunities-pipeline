@@ -680,8 +680,7 @@ Step 7: 综合输出
 |------|------|
 | `similar_prs` 有 merged=false AND maintainer_comment 含拒绝语义 | `rejected` |
 | `welcome_labels` 非空 OR `maintainer_responses` 含正向表态 | `welcoming` |
-| `maintainer_responses` 含交付陈述（released / shipped / fixed in v… / has been implemented），且指向本诉求 | `shipped` |
-| rejected / shipped / welcoming 同时存在 | 优先级 rejected > shipped > welcoming；同类型内取 age_days 最小的 |
+| rejected / welcoming 同时存在 | 优先级 rejected > welcoming；同类型内取 age_days 最小的 |
 | 以上都无 | `unknown` |
 
 > **`similar_prs` 的 merged=true 不产生任何信号。** 它来自 analyze.py 的模糊搜索
@@ -695,8 +694,16 @@ Step 7: 综合输出
 |--------|----------|
 | `welcoming` | value 上调一级（low→medium，medium→high） |
 | `rejected` | `status = 'obsolete'`，不出现在报告里 |
-| `shipped` | **不修正、不判死**——只是「证据里有交付陈述」的提示。scoring.py 看不到诉求正文，无法确认交付针对的是这一条诉求；且维护者可能一边宣布功能已发布、一边邀请补文档。裁决由 verify 阶段读完整讨论串后做 |
 | `neutral` / `unknown` | 不修正 |
+
+> **没有 `shipped` 这个取值，scoring.py 也不判断「已交付」。** 曾试过用关键词在机械层识别
+> 「维护者说已交付」，实测 10 条命中里**只有 1 条是真的**——误命中的模式完全一致：
+> 交付的是**相邻的另一件事**（opensearch output↔input、client-side↔server-side、
+> concurrency↔rate limits、Postgres/MySQL↔ClickHouse pushdown）。
+> 而每行的 `value_evidence.gap_desc` 里，细心的分析早已把这个区分写清楚了。
+> 机械检测器在重复一个已经存在于数据里的判断，而且做错了 9 次。
+> **交付判断归语义层**：精炼阶段（`prompts/analyze_v2.md` / `analyze_v3.md`）与
+> verify 阶段（`prompts/verify_v3.md` 的「维护者是否宣布已交付」）读完整讨论串来判。
 
 ---
 

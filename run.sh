@@ -216,10 +216,10 @@ FILTER_COUNT=$(sqlite3 "$DB" \
   "SELECT COUNT(*) FROM project_meta WHERE filter_status='pending';")
 
 if [ "$FILTER_COUNT" -gt 0 ]; then
-  echo "[1/5] Stage 3: 语义过滤 ($FILTER_COUNT 个，每批最多 100)..."
+  echo "[1/5] Stage 3: 语义过滤 ($FILTER_COUNT 个，每批最多 20)..."
   _FILTER_TMP=$(mktemp)
   sed "s|/path/to/pipeline/data/pipeline.db|$DB|g" "$PROMPTS/filter.md" > "$_FILTER_TMP"
-  # filter.md 每次最多处理 100 个，循环直到全部过滤完（最多 20 轮防止死循环）
+  # filter.md 每次最多处理 20 个，循环直到全部过滤完（最多 20 轮防止死循环）
   _filter_rounds=0
   while [ "$(sqlite3 "$DB" "SELECT COUNT(*) FROM project_meta WHERE filter_status='pending';")" -gt 0 ]; do
     _filter_rounds=$((_filter_rounds + 1))

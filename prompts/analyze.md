@@ -137,7 +137,8 @@ UPDATE projects SET status = 'analyzing'                        WHERE id = '<pro
   - `age_days` 计算**必须使用 UTC 时间**：`(datetime.now(timezone.utc) - datetime.fromisoformat(merged_at.replace("Z", "+00:00"))).days`（需 `from datetime import datetime, timezone`）；禁止使用 `datetime.now()` 本地时间，否则在非 UTC 机器上会有 0~1 天偏差
   - closed without merge：调用 `GET /repos/<project_id>/issues/<pr_number>/comments?per_page=100`，**仅**检查 `author_association` 为 `OWNER`/`COLLABORATOR`/`MEMBER` 的评论（即 maintainer 评论）是否含拒绝语义（"out of scope"/"won't fix"/"by design" 等）；不检查 PR body（body 是 PR 作者写的，不代表 maintainer 意见）
     - 含拒绝语义 → `{"merged": false, "age_days": <从 pr["closed_at"] 到今日的天数（两种 API 均在顶层；age_days 同样必须用 UTC now 计算）>, "maintainer_comment": "<引用原文>"}`
-    - 无明确拒绝语义 → 不填入 `similar_prs`（scoring.py 无法从中提取信号，不要填充噪声数据）
+    - 无明确拒绝语义 → 不填入 `similar_prs`（没有任何信号价值，不要填充噪声数据）
+      （merged 的 PR 之所以要留下来，是因为它的**标题**是判断「诉求是否已交付」的唯一线索——那是精炼阶段和 verify 阶段要读的东西，不是 scoring.py 的信号）
 - 对已有 issue 的 opportunity，调用 `GET /repos/<project_id>/issues/<issue_number>/comments?per_page=100`，检查 `author_association` 为 `OWNER`/`COLLABORATOR`/`MEMBER` 的 maintainer 回复：
   - 含 "PR welcome"/"good first issue"/"help wanted"/"contributions welcome" → 填入 `maintainer_responses`：`{"body_quote": "<引用原文>"}`
   - 含 "won't fix"/"out of scope"/"by design"/"not planned" → 填入 `maintainer_responses`：`{"body_quote": "<引用原文>"}`
@@ -332,14 +333,18 @@ WHERE id = '<project_id>' AND status = 'analyzing';
 - `medium`：有生产信号但有 workaround；或无生产信号但有 workaround
 - `low`：无生产信号且无 workaround（纯增强型功能）
 
-**maintainer_signal（由 scoring.py 自动计算，取值：`welcoming` / `rejected` / `shipped` / `unknown`）：**
+**maintainer_signal（由 scoring.py 自动计算，取值只有三个：`welcoming` / `rejected` / `unknown`）：**
 - `welcoming`：maintainer 回复含欢迎贡献语义；或 issue 有 help-wanted/good-first-issue 标签
 - `rejected`：有 closed-without-merge 且含明确拒绝语义的 PR；或 maintainer 回复含拒绝语义（优先级高于 welcoming）
-- `shipped`：maintainer 明确说该诉求已发布 / 已实现 / 已修复（released / shipped / fixed in v… / has been implemented）。**这是「证据里有交付陈述」的提示，不是判死**——scoring.py 看不到诉求正文，最终由 verify 阶段读完整讨论串裁决
 - `unknown`：无任何信号
 
-> **`merged: true` 不再是 welcoming 信号。** similar_prs 来自模糊搜索，命中的是「标题里碰巧有共同词」的 PR
+> **`merged: true` 不是 welcoming 信号。** similar_prs 来自模糊搜索，命中的是「标题里碰巧有共同词」的 PR
 > （大量是依赖升级、重构、RFC）；而当它真的相关时，它说明的是**诉求已被交付**——那属于该丢弃的机会点，不是欢迎的证据。
+
+> **scoring.py 不判断「已交付」。** 交付与否由**你**（精炼阶段）和 verify 阶段读完整讨论串来判：
+> 机械层只认「维护者说了什么词」，而实测 10 条「已交付」命中里 9 条是**交付了相邻的另一件事**
+> （output↔input、client↔server、concurrency↔rate），所以关键词判交付会大量误杀。
+> 你手里的 `value_evidence.gap_desc` 通常已经写清楚了「交付了什么、还差什么」——**先读它**。
 
 ## 注意事项
 

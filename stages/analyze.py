@@ -393,9 +393,12 @@ MAX_MAINTAINER_RESPONSES = 2
 # declared the ask delivered/refuted, or explicitly invited outside help. These are
 # ranked ahead of routine replies so they survive the response cap — a maintainer saying
 # "flow control features have been released with v1.7" is worth far more than the third
-# "thanks for the feedback" in the thread. NOTE: scoring.py's WELCOME_KEYWORDS/REJECT_KEYWORDS
-# have no "already shipped" vocabulary, so such a comment is collected here but not yet
-# acted on downstream; that gap is tracked separately.
+# "thanks for the feedback" in the thread. NOTE: the delivery judgment itself is NOT made
+# here or in scoring.py — scoring.py only reads `merged`/`age_days`/labels and a fixed
+# welcome/reject vocabulary, so it has no "already shipped" notion at all. This collector
+# exists so the *semantic* stages (analyze_v2/v3 refine, verify_v3) can see the delivery
+# statement in the evidence and decide whether it covers THIS ask: a maintainer announcing
+# "released with v1.7" for an adjacent feature is not a refutation of this opportunity.
 _STRONG_SIGNAL_KEYWORDS = [
     # delivered / refuted
     "released", "shipped", "now available", "is implemented", "has been implemented",

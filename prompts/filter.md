@@ -15,7 +15,7 @@
 读取待过滤的项目（每次最多处理 20 个，避免超出上下文窗口）：
 
 ```sql
-SELECT p.id, p.name, p.url, p.language, p.stars, p.description, p.topics, p.source
+SELECT p.id, p.name, p.url, p.language, p.stars, p.open_issues, p.description, p.topics, p.source
 FROM projects p
 JOIN project_meta m ON m.project_id = p.id
 WHERE m.filter_status = 'pending'
@@ -32,12 +32,17 @@ LIMIT 20;
 ## 取证预算（硬性约束，超时即放弃）
 
 判断"是不是知名原版的移植版"**只需要很浅的取证**。取证越深，收益递减而耗时线性增长，且会挤占后续批次的处理时间。
-**每个项目的 API 调用总数不得超过 2 次，且单次请求超时必须 ≤ 10 秒。**
+**每个项目的 API 调用总数不得超过 3 次，且单次请求超时必须 ≤ 10 秒。**
 
 按下面顺序取证，够用即止：
 
 1. **第一次调用**：`GET /repos/{owner}/{repo}/readme`（取 README，判断这个项目到底是干什么的）。这是必需的一次。
 2. **第二次调用（仅在需要确认原版时）**：搜索该项目的定位关键词，定位原版仓库。**一次搜索，命中即止。**
+3. **第三次调用（仅在已经确定原版、且需要填 `canonical_stars` 时）**：`GET /repos/{owner}/{canonical_repo>` 取原版的 stars。
+   **原版没定位到就不要调**——`canonical_stars` 填 NULL 不影响判定。
+
+> 「有真实用户群体」这条 keep 条件用的是 SELECT 里已经带出的 `p.stars` 与 `p.open_issues`
+> （数据库里已有的计数），**不需要再发 API 请求**。
 
 **明确禁止的取证行为**（这些是实际观测到的 40 分钟卡死的来源）：
 

@@ -25,76 +25,6 @@ EASY_KEYWORDS    = ["ui", "docs", "documentation", "example", "examples",
                     "typo", "wording", "comment", "readme",
                     "display", "font", "color", "placeholder", "validation message"]
 
-# 「需求已交付」表述：维护者说某个诉求已经发布 / 实现 / 修复。
-#
-# 这条链路此前**完全没有**识别「已交付」的词汇——维护者说「已在 v1.7 发布」时，
-# 机会点依然被当成待开发的缺口，value 照旧评分。
-#
-# 但关键词本身不能直接判死：raw 关键词在 3058 条 maintainer_response 上命中 27 次，
-# 人工核对后仅约 8~10 条是真的（精度 ~35%），误命中的典型是
-# 「once it is released」（将来时）、「not released yet」（否定）、
-# 「tokio landed in an unrecoverable state」（固定搭配）、
-# 「I fixed it but did not commit」（本地补丁，非交付）。
-#
-# 所以这里用两级规则 + 四道护栏，只在**语义确实指向交付**时才认：
-#   强规则：完成时/完成体（already / has been / is now）或带版本、PR、commit 锚点
-#   弱规则：过去式（was / were），必须邻接版本或 PR 锚点才认
-#   护栏 1：否定与将来时（not / never / will be / once / to be …）
-#   护栏 2：不确定语气（possible / maybe / as far as I know / if you can verify …）
-#   护栏 3：只改了本地没提交（did not commit / not pushed …）
-#   护栏 4：引用的是**别的** issue / PR 编号（"that one was fixed by #1325"）
-SHIPPED_KEYWORDS = [
-    "already fixed", "already merged", "already shipped", "already released",
-    "already implemented", "already delivered",
-    "has been fixed", "has been merged", "has been shipped", "has been released",
-    "has been implemented", "have been fixed", "have been released",
-    "have been implemented", "is now available", "are now available",
-    "fixed in v", "shipped in v", "shipped as v", "shipped to main in",
-    "released in v", "released as v", "merged in v", "landed in v",
-    "implemented in v", "now available in v",
-    "was fixed", "was merged", "was shipped", "was released", "was implemented",
-    "were fixed", "were released", "were implemented",
-]
-
-# 完成时 / 完成体，或自带版本、PR、commit 锚点——单独出现即可判定交付
-_SHIPPED_STRONG = re.compile(
-    r"(?i)\b(?:already|has\s+been|have\s+been|is\s+now|are\s+now)\s+"
-    r"(?:fixed|merged|shipped|released|implemented|delivered|landed|published)\b"
-    r"|\bfixed\s+in\s+v?\d"
-    r"|\bshipped\s+(?:in|as)\s+v?\d"
-    r"|\bshipped\s+to\s+main\s+in\s+[0-9a-f]{7,40}"
-    r"|\breleased\s+(?:in|as)\s+v?\d"
-    r"|\bmerged\s+in\s+(?:v?\d|#\d)"
-    r"|\blanded\s+in\s+v?\d"
-    r"|\bimplemented\s+in\s+v?\d"
-    r"|\bv?\d[\w.]*\s+(?:was|has\s+been)\s+(?:released|shipped|merged|published)\b"
-    r"|\bnow\s+available\s+in\s+v?\d"
-)
-# 过去式——必须邻接版本 / PR / commit 锚点才认，否则 "was merged" 满地都是
-_SHIPPED_WEAK = re.compile(
-    r"(?i)\b(?:was|were)\s+"
-    r"(?:fixed|merged|shipped|released|implemented|delivered|landed|published)\b"
-)
-_SHIPPED_ANCHOR = re.compile(r"(?i)(?:#\d+|\bv?\d+\.\d+|\bv\d+\b|\b[0-9a-f]{7,40}\b)")
-# 否定 / 将来时，出现在命中点之前的窗口内即否决
-_SHIPPED_NEGATED = re.compile(r"(?i)\b(not|never|no|un|n't)\b[^.;:!?]{0,18}$")
-_SHIPPED_FUTURE = re.compile(
-    r"(?i)\b(will|would|shall|should|going\s+to|to\s+be|once|when|after|before|if|plans?\s+to)\b[^.;:!?]{0,30}$")
-# 不确定语气——命中点前后窗口内出现即否决
-_SHIPPED_HEDGE = re.compile(
-    r"(?i)\b(possible|possibly|maybe|might\s+(?:have|be)|could\s+have|i\s+think|"
-    r"as\s+far\s+as\s+i\s+know|if\s+you\s+can\s+verify|not\s+sure|unclear)\b")
-# 否定直接落在交付动词上（"was not released" / "isn't merged"）——命中点窗口内即否决
-_SHIPPED_NEGATED_DELIVERY = re.compile(
-    r"(?i)\b(?:not|never|no\s+longer|n't)\s+(?:been\s+)?"
-    r"(?:fixed|merged|shipped|released|implemented|delivered|landed|published)\b")
-# 只改了本地、没进主干
-_SHIPPED_NOT_LANDED = re.compile(
-    r"(?i)\b(?:did\s*n[o']t|not|never)\s+(?:commit|push|merge|land|submit)\w*")
-# 引用到的 issue / PR 编号
-_ISSUE_REF = re.compile(
-    r"(?i)(?:#(\d{1,5})\b|\bissues?/(\d{1,5})\b|\bissue[s]?\s*#?\s*(\d{1,5})\b|\bPR\s*#?\s*(\d{1,5})\b)")
-
 LEVEL_UP = {"low": "medium", "medium": "high", "high": "high"}
 
 # Labels that signal a maintainer is actively recruiting outside help. analyze.py
@@ -239,56 +169,11 @@ def _writeback_status(signal: str, current_status: str) -> str:
 
     v3 引入 verified 状态后，若复评无条件写回 'open'，verify 选取条件
     (status='open') 会反复选中同一行，造成无限重验循环；verified 必须沉淀。
-
-    `shipped` **不**判死。它只说明证据里有交付陈述，而交付是不是针对本条诉求
-    是个语义判断——scoring.py 看不到机会点的诉求正文，维护者也可能一边宣布
-    功能已发布、一边邀请补文档（restate#3291 就是这种）。裁决留给 verify 阶段，
-    那里读的是完整 issue 讨论串。机械层在这里只能做到「别把交付当成欢迎」，
-    判死是越权。
     """
     return "obsolete" if signal == "rejected" else current_status
 
 
-def _matches_shipped(text: str, own_issue=None) -> bool:
-    """Whether a maintainer statement says the ask has already been delivered.
-
-    `own_issue` is the opportunity's own issue number.  A delivery statement that
-    cites a *different* issue or PR is about something else ("that one was fixed by
-    #1325, while this is ...") and must not be read as this ask being satisfied.
-
-    The signal is deliberately conservative: it only reports that the evidence
-    contains a delivery claim.  Whether the claim really kills this opportunity
-    is a semantic call that belongs to the verify stage, which reads the whole
-    thread — a maintainer can announce delivery of the feature and still invite a
-    docs contribution.
-    """
-    if not text:
-        return False
-    for regex, needs_anchor in ((_SHIPPED_STRONG, False), (_SHIPPED_WEAK, True)):
-        for m in regex.finditer(text):
-            start = max(0, m.start() - 40)
-            if _SHIPPED_NEGATED.search(text[start:m.start()]):
-                continue
-            if _SHIPPED_FUTURE.search(text[start:m.start()]):
-                continue
-            window = text[max(0, m.start() - 80):m.end() + 80]
-            if _SHIPPED_HEDGE.search(window):
-                continue
-            if _SHIPPED_NOT_LANDED.search(window):
-                continue
-            if _SHIPPED_NEGATED_DELIVERY.search(window):
-                continue
-            if needs_anchor and not _SHIPPED_ANCHOR.search(window):
-                continue
-            if own_issue:
-                refs = {g for g in _ISSUE_REF.findall(window) for g in g if g}
-                if refs and refs != {str(own_issue)}:
-                    continue
-            return True
-    return False
-
-
-def score_maintainer_signal(me: dict, own_issue=None) -> str:
+def score_maintainer_signal(me: dict) -> str:
     similar_prs    = _to_list(me.get("similar_prs"))
     welcome_labels = _to_list(me.get("welcome_labels"))
     responses      = _to_list(me.get("maintainer_responses"))
@@ -321,8 +206,7 @@ def score_maintainer_signal(me: dict, own_issue=None) -> str:
     for resp in responses:
         if not isinstance(resp, dict):
             continue
-        # body_quote 是 analyze.py 的字段名；历史行（含 v3 verify 写入的）存在只写 body 的。
-        body = (resp.get("body_quote") or resp.get("body") or "").lower()
+        body = (resp.get("body_quote") or "").lower()
         # Use independent `if` (not `elif`) so a body containing both welcome and reject
         # keywords produces two signals.  The final sort gives rejected higher priority
         # (PRIORITY=0 < welcoming=1), so the correct outcome still surfaces even when
@@ -331,19 +215,15 @@ def score_maintainer_signal(me: dict, own_issue=None) -> str:
             signals.append(("welcoming", 0))
         if _matches_any(body, REJECT_KEYWORDS):
             signals.append(("rejected", 0))
-        if _matches_shipped(body, own_issue):
-            signals.append(("shipped", 0))
 
     if any(isinstance(lbl, str) and lbl.lower() in _WELCOME_LABELS for lbl in welcome_labels):
         signals.append(("welcoming", 0))
 
     if not signals:
         return "unknown"
-    # 优先级：rejected > shipped > welcoming；同类型内取最新（age_days 最小）
-    # shipped 排在 welcoming 之前：交付陈述针对的是诉求本身，而 welcoming 只是
-    # 泛泛的态度；两者同时出现时，机会点更可能是已经做完了。
-    _PRIORITY = {"rejected": 0, "shipped": 1, "welcoming": 2}
-    signals.sort(key=lambda x: (_PRIORITY.get(x[0], 3), x[1]))
+    # 优先级：rejected > welcoming；同类型内取最新（age_days 最小）
+    _PRIORITY = {"rejected": 0, "welcoming": 1}
+    signals.sort(key=lambda x: (_PRIORITY.get(x[0], 2), x[1]))
     return signals[0][0]
 
 
@@ -488,7 +368,6 @@ def run():
     try:
         rows = conn.execute("""
             SELECT o.id, o.project_id, o.source_type, o.status AS opp_status,
-                   o.issue_number,
                    o.value_evidence, o.difficulty_evidence,
                    o.urgency_evidence, o.maintainer_evidence,
                    p.stars AS project_stars,
@@ -512,7 +391,7 @@ def run():
                 project_adopted = _project_is_adopted(
                     row["project_stars"], row["project_canonical_url"]
                 )
-                signal     = score_maintainer_signal(me, row["issue_number"])
+                signal     = score_maintainer_signal(me)
                 value      = score_value(ve, signal, row["source_type"] or "", project_adopted)
                 difficulty = score_difficulty(de)
                 urgency    = score_urgency(ue, row["source_type"] or "")
