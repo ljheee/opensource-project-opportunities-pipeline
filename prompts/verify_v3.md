@@ -67,6 +67,13 @@ if GITHUB_TOKEN:
 2. **canonical 参照是否成立**：`value_evidence.canonical_impl_url` 非空时，解析 `https://github.com/<owner>/<repo>/blob/<branch>/<path>` 并 `GET /repos/<owner>/<repo>/contents/<path>?ref=<branch>`；404 → 该机会点价值基础不成立 → **refuted**。
 3. **是否已有 merged 实现（similar_prs 先信后查）**：`maintainer_evidence.similar_prs` 非空 → 逐条 `GET /repos/<project_id>/pulls/<number>` 复核存在性与 merged 状态（不重搜）；为空 → 搜一次 `GET /search/issues`，params `{"q": 'is:pr is:merged repo:<project_id> "<keyword>"', "per_page": 5}`，有 merged 实现 → **refuted**。
    **Search API merged_at 陷阱**：`/search/issues` 返回的 PR 顶层 `merged_at` 恒为 null，必须检查 `pr.get("pull_request", {}).get("merged_at")`。
+4. **维护者是否宣布已交付**（与第 3 条互补：第 3 条看代码与 PR，这条看**人话**）：读 `maintainer_evidence.maintainer_responses`，若维护者（`author_association` ∈ OWNER/MEMBER/COLLABORATOR/CONTRIBUTOR）明确说该诉求「已发布 / 已实现 / 已修复」（released / shipped / fixed in v… / has been implemented / already implemented），**且这句陈述指向的正是本条机会点的诉求** → **refuted**。
+   - 指向的是**别的** issue / PR（"that one was fixed by #1325, while this is …"）→ **confirmed**。
+   - 语气不确定（"可能已经修好了，麻烦确认一下"）→ **confirmed**。
+   - "我本地改了但没提交" → **confirmed**（这正是可贡献的入口）。
+   - "功能已发布，但文档还得补" → 机会点本身是文档缺口则 **confirmed**，否则 **refuted**。
+   - `body_quote` 只截了前 200 字，看不清就 `GET /repos/{project_id}/issues/<number>/comments` 拉全文。
+   - 结果记进 `checks`：`maintainer_response:announced_shipped` / `maintainer_response:no_shipped_statement`。
 
 ### issue / performance / compatibility
 
@@ -74,6 +81,7 @@ if GITHUB_TOKEN:
 2. **是否已有 linked PR**：`GET /repos/<project_id>/issues/<number>/timeline?per_page=100`，存在 `cross-referenced`（source.issue.pull_request 非空，逐层 `.get()` 防御）或 `connected` 事件 → **refuted**；截断（恰 100 条）时保守处理不 refute。
 3. **reactions 校准**：API 返回的 `reactions.total_count` 与 `issue_reactions` 字段相差 >20% → **corrected**（修正 issue_reactions 与 value_evidence.issue_reactions）。
 4. **similar_prs 先信后查**：同 feature_gap 第 3 条。
+5. **维护者是否宣布已交付**：同 feature_gap 第 4 条。
 
 ### security
 

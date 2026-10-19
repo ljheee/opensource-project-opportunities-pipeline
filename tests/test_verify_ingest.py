@@ -150,10 +150,13 @@ class TestIngestNormalisesEntries(unittest.TestCase):
                             "checks": ["issue:open", "timeline:无cross-referenced"]}],
                           f, ensure_ascii=False)
             ingest(pend, [1], log_dir=d, dry_run=False)
-            line = json.loads(open(os.path.join(d, "2026-09-27.jsonl")
-                                   if os.path.exists(os.path.join(d, "2026-09-27.jsonl"))
-                                   else [p for p in os.listdir(d) if p.endswith(".jsonl")
-                                         and p != "quarantine.jsonl"][0], encoding="utf-8").read().splitlines()[0])
+            # 日志文件名带当天日期，这里直接取目录里落下的那一个 jsonl
+            # （早前写法把 else 分支的文件名漏了 os.path.join(d, …)，
+            #  open() 会在 CWD 里找，报 FileNotFoundError）。
+            logs = [p for p in os.listdir(d)
+                    if p.endswith(".jsonl") and p != "quarantine.jsonl"]
+            self.assertTrue(logs, "ingest 未写出裁决日志")
+            line = json.loads(open(os.path.join(d, logs[0]), encoding="utf-8").read().splitlines()[0])
             self.assertEqual(line["checks"], ["issue_state:open", "linked_pr:none"])
 
 

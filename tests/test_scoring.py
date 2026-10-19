@@ -116,7 +116,7 @@ class TestRunPreservesVerified(unittest.TestCase):
             CREATE TABLE project_meta (project_id TEXT, canonical_url TEXT);
             CREATE TABLE opportunities (
                 id INTEGER PRIMARY KEY, project_id TEXT, task_id INTEGER,
-                source_type TEXT, source_ref TEXT,
+                source_type TEXT, source_ref TEXT, issue_number INTEGER,
                 value TEXT, difficulty TEXT, urgency TEXT, maintainer_signal TEXT,
                 value_evidence TEXT, difficulty_evidence TEXT,
                 urgency_evidence TEXT, maintainer_evidence TEXT,
@@ -142,6 +142,121 @@ class TestRunPreservesVerified(unittest.TestCase):
                 "SELECT status, value FROM opportunities").fetchone()
             self.assertEqual(row[0], "verified")   # 不被冲回 open
             self.assertIsNotNone(row[1])           # 被复评选中并打分
+
+
+class TestMergedPrIsNotAWelcomeSignal(unittest.TestCase):
+    """merged PR 曾经被当成「维护者欢迎外部贡献」的信号。
+
+    similar_prs 来自 analyze.py 的模糊搜索 `repo:X is:pr is:merged "<标题前 40 字>"`，
+    命中的是「标题里碰巧有共同词」的 PR——实测大量是 dependabot 升级
+    （"chore(wren-ai-service): bump the all group … with 25 updates"）。
+    而当 merged PR **真的**相关时，它指向的是反面：诉求已被交付
+    （bytewax#558 的 PR 标题逐字回答了诉求）。同一个事实被两层算成了两个相反的信号。
+    """
+
+    def test_merged_pr_alone_is_not_welcoming(self):
+        me = {"similar_prs": [{"merged": True, "age_days": 10}]}
+        self.assertNotEqual(scoring.score_maintainer_signal(me), "welcoming")
+
+    def test_merged_pr_alone_yields_unknown(self):
+        me = {"similar_prs": [{"merged": True, "age_days": 10}]}
+        self.assertEqual(scoring.score_maintainer_signal(me), "unknown")
+
+    def test_placeholder_pr_without_number_is_not_welcoming(self):
+        """无 number/title/url 的占位条目最恶劣：连回溯审计的入口都没有。"""
+        me = {"similar_prs": [{"merged": True, "age_days": 92},
+                              {"merged": True, "age_days": 886}]}
+        self.assertEqual(scoring.score_maintainer_signal(me), "unknown")
+
+    def test_welcome_label_still_works_alongside_merged_pr(self):
+        me = {"similar_prs": [{"merged": True, "age_days": 10}],
+              "welcome_labels": ["help wanted"]}
+        self.assertEqual(scoring.score_maintainer_signal(me), "welcoming")
+
+    def test_maintainer_invitation_still_works(self):
+        me = {"maintainer_responses": [
+            {"body_quote": "PRs are welcome, feel free to send one"}]}
+        self.assertEqual(scoring.score_maintainer_signal(me), "welcoming")
+
+    def test_rejection_via_maintainer_comment_still_works(self):
+        me = {"similar_prs": [{"merged": False, "age_days": 5,
+                               "maintainer_comment": "this is out of scope"}]}
+        self.assertEqual(scoring.score_maintainer_signal(me), "rejected")
+
+    def test_removing_the_merged_signal_does_not_penalise_the_row(self):
+        """修复不是把行判死：证据里的 welcoming 仍照常抬 value。"""
+        me = {"similar_prs": [{"merged": True, "age_days": 10}],
+              "welcome_labels": ["good first issue"]}
+        signal = scoring.score_maintainer_signal(me)
+        ve = {"canonical_impl_url": "https://github.com/x/y/blob/main/a.go"}
+        self.assertEqual(signal, "welcoming")
+        self.assertEqual(scoring.score_value(ve, signal), "high")
+
+    def test_response_body_field_fallback(self):
+        """历史行（含 v3 verify 写入的）只写 body，不写 body_quote。"""
+        me = {"maintainer_responses": [
+            {"body": "out of scope, this is by design"}]}
+        self.assertEqual(scoring.score_maintainer_signal(me), "rejected")
+
+
+class TestShippedVocabulary(unittest.TestCase):
+    """维护者宣布「已交付」的表述此前整条链路无人识别。"""
+
+    def test_release_announcement_is_shipped(self):
+        me = {"maintainer_responses": [
+            {"body_quote": "The first flow control features have been released with v1.7"}]}
+        self.assertEqual(scoring.score_maintainer_signal(me), "shipped")
+
+    def test_fixed_in_version_is_shipped(self):
+        me = {"maintainer_responses": [{"body_quote": "fixed in v310"}]}
+        self.assertEqual(scoring.score_maintainer_signal(me), "shipped")
+
+    def test_future_release_is_not_shipped(self):
+        me = {"maintainer_responses": [
+            {"body_quote": "once it is released, we'll be able to add this"}]}
+        self.assertEqual(scoring.score_maintainer_signal(me), "unknown")
+
+    def test_negated_release_is_not_shipped(self):
+        me = {"maintainer_responses": [
+            {"body_quote": "as the 1.5.0 is still not released, please pin 1.4.0"}]}
+        self.assertEqual(scoring.score_maintainer_signal(me), "unknown")
+
+    def test_hedged_statement_is_not_shipped(self):
+        me = {"maintainer_responses": [
+            {"body_quote": "It's possible this issue has been fixed in the latest release. "
+                          "If you can verify and let us know whether this is still an issue"}]}
+        self.assertEqual(scoring.score_maintainer_signal(me), "unknown")
+
+    def test_local_patch_without_commit_is_not_shipped(self):
+        me = {"maintainer_responses": [
+            {"body_quote": "I've already fixed this :) The patch was a bit messy "
+                          "so I did not commit it to 2.10"}]}
+        self.assertEqual(scoring.score_maintainer_signal(me), "unknown")
+
+    def test_delivery_of_another_issue_is_not_shipped(self):
+        me = {"maintainer_responses": [
+            {"body_quote": "that one was snapshot retention and was fixed by #1325 in v0.5.14, "
+                          "while this is EnforceL0RetentionByTime"}]}
+        self.assertEqual(scoring.score_maintainer_signal(me, own_issue=1270), "unknown")
+
+    def test_delivery_of_own_issue_is_shipped(self):
+        me = {"maintainer_responses": [{"body_quote": "the problem was fixed in #4113"}]}
+        self.assertEqual(scoring.score_maintainer_signal(me, own_issue=4113), "shipped")
+
+    def test_shipped_does_not_kill_the_row(self):
+        """shipped 是可见信号，不是判死：scoring.py 看不到诉求正文，
+        维护者也可能一边宣布功能已发布、一边邀请补文档。裁决留给 verify 阶段。"""
+        me = {"maintainer_responses": [
+            {"body_quote": "The first flow control features have been released with v1.7"}]}
+        signal = scoring.score_maintainer_signal(me)
+        self.assertEqual(signal, "shipped")
+        self.assertEqual(scoring._writeback_status(signal, "open"), "open")
+        self.assertEqual(scoring._writeback_status(signal, "verified"), "verified")
+
+    def test_shipped_outranks_welcoming(self):
+        me = {"maintainer_responses": [
+            {"body_quote": "has been implemented already, and feel free to send docs fixes"}]}
+        self.assertEqual(scoring.score_maintainer_signal(me), "shipped")
 
 
 if __name__ == "__main__":
