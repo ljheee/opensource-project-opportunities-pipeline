@@ -463,6 +463,44 @@ def collect_maintainer_responses(comments, limit: int = MAX_MAINTAINER_RESPONSES
     return [entry for _, _, _, entry in picked[:limit]]
 
 
+def last_maintainer_response(comments) -> dict:
+    """The newest maintainer comment in the thread.
+
+    `collect_maintainer_responses` ranks by decision weight first and comment index
+    only as the last tiebreaker, so the comment it surfaces is often an *early* one:
+    a strongly-worded opening statement outranks the reply that later closed the
+    question. Judging a thread by the last comment instead flipped 3/3 verdicts in
+    a 2026-09 batch, so both views are recorded.
+    """
+    newest = None
+    for c in comments or []:
+        if not isinstance(c, dict):
+            continue
+        if not is_maintainer_signal((c.get("author_association") or "").upper()):
+            continue
+        if newest is None or (c.get("created_at") or "") > (newest.get("created_at") or ""):
+            newest = c
+    if newest is None:
+        return {}
+    return {
+        "body_quote": (newest.get("body") or "")[:600],
+        "author": (newest.get("user") or {}).get("login", ""),
+        "author_association": (newest.get("author_association") or "").upper(),
+        "created_at": newest.get("created_at") or "",
+    }
+
+
+def count_maintainer_responses(comments) -> int:
+    """How many maintainer comments the thread has — a bare count says nothing on
+    its own, but 0 vs 12 tells the refine stage whether it is looking at a thread
+    that was ever answered."""
+    n = 0
+    for c in comments or []:
+        if isinstance(c, dict) and is_maintainer_signal((c.get("author_association") or "").upper()):
+            n += 1
+    return n
+
+
 def _make_why_hard(source_type: str, title: str, body: str | None,
                    has_canonical: bool, approach_file: str = "") -> str:
     """Generate a why_hard hint for difficulty_evidence."""
@@ -731,6 +769,8 @@ def analyze_project(conn: sqlite3.Connection, task: dict, dry_run: bool = False)
             "similar_prs": similar_prs,
             "maintainer_responses": maintainer_responses,
             "welcome_labels": welcome_labels,
+            "last_maintainer_response": last_maintainer_response(comments),
+            "maintainer_response_count": count_maintainer_responses(comments),
         })
 
         prod_quote, has_prod = _extract_prod_signal_quote(body, comments)

@@ -1,0 +1,25 @@
+{
+  "batch": [
+    1837,
+    1714
+  ],
+  "task_date": "2026-10-19",
+  "adjudicated_at": "2026-10-20T12:45:00+00:00",
+  "drafts": 12,
+  "kept_open": [
+    4218,
+    4219,
+    4222,
+    4224,
+    2302,
+    2306
+  ],
+  "deleted": {
+    "4221": "cot-rs/cot #141 — claimant fu050409 stated work in progress (2025-03-28) and 19 months later has 0 PRs in the repo; also an explicit `good first issue`, which cot's AI_POLICY.md restricts to humans.",
+    "13462": "cot-rs/cot #182 — maintainer m4tx authored the open PR #711 'build: remove axum dependency and use hyper directly' which says 'Fixes #182'; claim, not an opening.",
+    "13463": "cot-rs/cot #671 — Wervice's open PR #673 'feat: add remote address extractor' (9 commits) implements the ask; issue is assigned to its author and the maintainer wants it 'resolved soon'.",
+    "2303": "hyperdiv #19 — maintainer answered the ask in-thread ('Thanks I'll try to make more clear in the docs...'); the router-based multi-page pattern it asked for is now fully documented in pages_and_navigation.py.",
+    "2304": "hyperdiv #82 — blocked on upstream shoelace#1980 which is still open; maintainer reproduced it upstream, so there is no PR site in this repo.",
+    "2305": "hyperdiv #54 — maintainer-authored, 0 comments in 2.5 years, and the author himself writes 'this is not a high priority fix'."
+  }
+}

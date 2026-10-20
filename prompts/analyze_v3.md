@@ -50,6 +50,17 @@ ORDER BY o.project_id, o.source_type;
 1. **是否真实存在**
    - `feature_gap` 类型：确认目标项目确实没有该功能。可能只是目录命名不同（如 `circuitbreaker` vs `circuit-breaker`）。若明显已实现或命名差异，请丢弃。
    - `issue`/`performance`/`security`/`compatibility` 类型：确认 issue 描述确实代表一个可贡献的改进点，而不是用户提问、文档缺失或已关闭的误报。
+     - 若 `value_evidence` 里有 `issue_state` / `issue_state_reason` / `linked_pr` 三个字段（本批的证据刷新会写入），**先读它们再下判断**：
+       - `issue_state = "closed"`：**不要**只凭 state 就丢弃——先读该 issue 线程**最后一条**维护者评论（见 `last_maintainer_response`）判断关闭原因：
+         - 「已修复 / 已交付 / 不再计划 / wontfix」→ **DELETE**
+         - 「与 #N 重复」→ 先查 #N 是否已入册（`SELECT id,status,source_ref FROM opportunities WHERE project_id='<pid>' AND status<>'draft' AND (source_ref='issue:N' OR source_ref LIKE '%/issues/N');`）：
+           已入册 → **DELETE**（同一诉求已有记录）；未入册 → **保留**，并在 `value_evidence` 写 `"duplicate_of": N`
+           （**不要**改 `source_ref`，会撞 UNIQUE 键）
+         - 「过期 / 无人响应」而诉求本身仍成立 → **保留**，并在 `value_evidence` 写 `"closed_reason": "stale"`
+         - 判不出来 → **保留**（不确定时宁可保留）
+       - `linked_pr = true` → 已经有人动手做这件事：
+         - 那个 PR 已合入、且标题逐字复述了本诉求 → **DELETE**（诉求已被交付）
+         - PR 还在评审中 / 标题与诉求无关 → **保留**，并把 PR 标题写进 `value_evidence.linked_pr_title`
 
 2. **canonical 参照是否正确**
    - 如果 `canonical_url` 为空或明显错误，不要把机会点价值建立在不存在的对照上。
@@ -65,6 +76,17 @@ ORDER BY o.project_id, o.source_type;
 
 5. **去重合并**
    - 同一个功能缺口如果同时以 `feature_gap` 和某个 `issue` 出现，合并为一条，保留更具体的 source_ref。
+   - **与库中已有行去重**：同一个 project 下若已存在 `status<>'draft'` 的行指向同一个上游 issue，
+     这条 draft 是重复行 → **DELETE**，不要开成第二条记录。查法（注意 `issue:N` 与完整 URL 两种写法都算同一个 issue）：
+     ```sql
+     SELECT id, status, source_type, source_ref, title FROM opportunities
+     WHERE project_id = '<project_id>' AND status <> 'draft'
+       AND (source_ref = 'issue:<N>' OR source_ref LIKE '%/issues/<N>');
+     ```
+     有命中 → DELETE（同一诉求已入册；已入册那行的 source_type 才是准的）。
+     本批开始前已按上游 issue 号做过一次机械去重，但 `classify_issue` 把同一 issue 打成不同
+     source_type 的情况仍可能落在你手上——**改 source_type 之前先查一次**，否则会撞
+     `UNIQUE(project_id, source_type, source_ref)` 导致整条 UPDATE 失败。
 
 6. **假阳性黑名单（feature_gap 类，直接 DELETE，不得转为 open）**
    以下"差异"不是功能缺口，对应 draft 一律 DELETE：
@@ -72,7 +94,16 @@ ORDER BY o.project_id, o.source_type;
    - meta 文件差异（`LICENSE`、`CHANGELOG`、`CONTRIBUTING`、`CODE_OF_CONDUCT`、issue/PR 模板等）
    - monorepo 子模块的 README/文档结构差异
    - `docs/`、`examples/`、`scripts/` 目录的组织方式差异
+   - **canonical 仓库的构建模块名 / 子目录名**：`canonical:<lang>/<name>` 里的 `<name>` 常常是原版的
+     Maven/Gradle/npm 模块或子目录（如 `jOOQ-codegen`、`jOOQ-bom`、`akka-actor-typed`、`akka-bench-jmh`）。
+     跨语言移植本来就不会照搬原版的模块划分，**目标项目没有同名目录不是功能缺口** → DELETE。
+     判别：`<name>` 带 `-codegen`/`-bom`/`-bench`/`-testkit`/`-extensions` 之类构建后缀，
+     或它就是原版仓库的顶层目录名 → DELETE。
+   - **原版项目自身的名字**（如 `jOOQ`、`akka`）：目标项目是它的移植版，README/文档里必然出现这个名字。
+     这既不是功能缺口，也会在 code search 里命中 → 按判断原则 7 DELETE。
    判断依据：这些条目反映的是仓库工程实践差异，不是用户可感知的功能缺失。
+   **code search 0 命中不能救活上面任何一条**——0 命中只说明目标仓库里没出现这个字符串，
+   而这些条目要的从来不是那个字符串。
 
 7. **feature_gap 二元判定协议（转为 open 前的强制核查）**
    每个 feature_gap draft 在执行 UPDATE 置 open **之前**必须完成定向核查；
@@ -211,6 +242,14 @@ ORDER BY o.project_id, o.source_type;
   标题无关 → 忽略，不要因为它判 `welcoming`。
 - `merged: false`（关闭未合并）：说明维护者可能拒绝过类似方案。此时 `maintainer_comment` 会尽量抓取维护者的拒绝理由（如 "out of scope"、"won't fix"、"not planned"）。
 
+`maintainer_responses` 是采集阶段按「决策权重 → 身份置信度 → 评论序号」排序后取前 2 条的，
+**它很可能不是线程里最后一条**：一句早期但措辞强烈的表态会盖掉线程末尾的更新。
+采集阶段另外写了 `last_maintainer_response`（线程里**最后一条**维护者评论，正文截到 600 字）
+和 `maintainer_response_count`。
+**判「维护者是否已宣布交付」时两个都要读，末尾那条优先**——2026-09 有 3 个案例，
+判向全部被线程最后一条评论翻转。
+`body_quote` 只截了前 200 字、看不清就 `GET /repos/<project_id>/issues/<number>/comments` 拉全文。
+
 ```json
 {
   "similar_prs": [
@@ -233,6 +272,8 @@ ORDER BY o.project_id, o.source_type;
 **判断规则**：
 - `maintainer_comment` 含拒绝语义 → `rejected`
 - `welcome_labels` 非空 或 `maintainer_responses` 含正向表态（维护者明说欢迎 / 邀请外部提 PR）→ `welcoming`
+- `last_maintainer_response` 的正文**同样**参与「维护者是否宣布已交付」的判断——它通常是线程里最新的一条表态，
+  出现「已交付 / 已拒绝 / 指向另一个 issue」这类后续发言时，**以它为准**（`maintainer_responses` 可能停在早期）
 - `merged: true` **不产生** `welcoming`（理由见上）；它只用来判断「诉求是否已被交付」
 - 维护者在 `maintainer_responses` 里明确说某个功能**已发布 / 已实现 / 已修复**（released / shipped / fixed in v… / has been implemented）→
   只有**交付的就是本条机会点要的这件事**时才 **丢弃这条机会点**。判断必须落到具体对象上，不能只看「有交付陈述」：
