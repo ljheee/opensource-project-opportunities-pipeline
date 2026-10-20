@@ -117,6 +117,7 @@ filtered_skip (terminal)
 - **证据与评分分离**：LLM 只产出结构化证据，规则化评分由 `stages/scoring.py` 完成，避免 LLM 直接打分的不稳定性。
 - **并发控制**：`run.sh` 与 `run_bulk.sh` 共享 `data/.pipeline.lock`，Linux 用 `flock` 非阻塞锁，macOS 因无 flock 命令仅打印警告，需手动避免并发。
 - **运行前自动丢弃本地未提交修改**：两个脚本都会 `git checkout -- .` 再 `git pull --rebase`，本地改动会丢失。
+- **禁止在脚本运行期间修改 `run.sh` / `run_bulk*.sh` / `run_verify_backlog.sh`**：bash 按字节偏移增量读取脚本，中途改文件会让它从错误位置续读。2026-10-19 实测：把两处 `100` 改成 `20`（文件短了 2 字节），跑到脚本末尾时 bash 从注释行 `# 3.5 v3: …` 的第 3 个字符开始读，把 `3.5` 当命令执行，Stage 3.5/4.5/5 与 push 全部没跑。改 `prompts/*.md` 和 `stages/*.py` 是安全的（前者按批渲染成临时文件，后者一次性读入），只有 shell 脚本有这个问题。
 - **`scripts/` 目录是临时产物**：LLM 运行时可能生成临时脚本，已加入 `.gitignore`，不需要版本追踪。
 - **测试**：`tests/` 下有 unittest 烟雾测试（`python3 -m unittest discover -s tests`），验证另靠各 stage 的 `--dry-run`、SQLite 查询以及报告内容检查。
 - **find → verify 双阶段**：分析（find）与验证（verify）在不同 LLM 会话，验证者看不到分析推理、默认立场为反驳；验证状态复用 opportunities.status 枚举（verified/refuted），验证理由写 JSONL 日志不进 DB（零 DDL）。

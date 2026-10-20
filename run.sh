@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# ⚠️ 本脚本运行期间禁止修改本文件（以及 run_bulk*.sh / run_verify_backlog.sh）。
+#    bash 按字节偏移增量读取脚本：中途改文件会让它从错误位置续读，把注释当命令执行。
+#    2026-10-19 实测：改短 2 字节 → 跑到脚本末尾时 bash 把注释里的 `3.5` 当命令，
+#    Stage 3.5/4.5/5 与 git push 全部没跑，且没有任何前置阶段报错的迹象。
+#    改 prompts/*.md 与 stages/*.py 是安全的（前者按批渲染成临时文件，后者一次性读入）。
+
 PIPELINE_DIR="$(cd "$(dirname "$0")" && pwd)"
 DB="$PIPELINE_DIR/data/pipeline.db"
 PROMPTS="$PIPELINE_DIR/prompts"
