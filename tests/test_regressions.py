@@ -6,12 +6,21 @@ from stages import analyze, scoring
 
 
 class TestWelcomeLabelContract(unittest.TestCase):
-    """P0-1: analyze.py collected 4 welcome labels, scoring.py consumed 10."""
+    """P0-1: analyze.py collected 4 welcome labels, scoring.py consumed 10.
+
+    2026-10-21 起两边的词表都由 scoring.py 派生（analyze.WELCOME_LABELS =
+    scoring._WELCOME_LABELS），所以这条子集不变式现在由构造保证。真正的行为守卫在
+    tests/test_welcome_labels.py：逐个 label 比对生产者与消费者的判定结果。
+    """
 
     def test_analyze_collects_every_label_scoring_consumes(self):
         self.assertTrue(
             scoring._WELCOME_LABELS.issubset(analyze.WELCOME_LABELS),
             f"analyze.py is missing: {sorted(scoring._WELCOME_LABELS - analyze.WELCOME_LABELS)}")
+
+    def test_analyze_vocabulary_is_derived_not_redeclared(self):
+        """A second copy of the vocabulary is exactly the drift risk being removed."""
+        self.assertEqual(analyze.WELCOME_LABELS, set(scoring._WELCOME_LABELS))
 
     def test_enhancement_is_collected(self):
         self.assertIn("enhancement", analyze.WELCOME_LABELS)

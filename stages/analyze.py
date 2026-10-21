@@ -41,6 +41,7 @@ _REPO_DIR = os.path.dirname(_STAGES_DIR)
 if _REPO_DIR not in sys.path:
     sys.path.insert(0, _REPO_DIR)
 from stages.scoring import is_welcome_label  # noqa: E402
+from stages import scoring  # noqa: E402
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 HEADERS = {"Accept": "application/vnd.github+json"}
@@ -381,22 +382,15 @@ def _make_gap_desc(source_type: str, title: str, body: str | None = None,
     return f"User-reported issue or requested improvement: {title}"
 
 
-# Labels that mean a maintainer is actively recruiting outside help. This set is kept
-# identical to scoring._WELCOME_LABELS: analyze.py is the producer and scoring.py the
-# consumer, so a narrower producer silently drops signals the consumer expects
-# (enhancement / feature-request / accepted were collected by nobody).
-#
-# The *decision* now lives in scoring.is_welcome_label() — one implementation, so the
-# producer and the consumer cannot drift apart again (they did: the consumer learned
-# to normalise decorated spellings like '❓ help wanted', the producer still did not,
-# and 8 real welcome labels were dropped on the floor). This set stays as the
-# vocabulary summary the regression test checks against.
-WELCOME_LABELS = {"help wanted", "help-wanted", "good first issue", "good-first-issue",
-                  "enhancement", "feature-request", "feature request", "accepted",
-                  "pr welcome", "contributions welcome",
-                  "pull request welcome", "needs contributor", "contributor wanted",
-                  "volunteer wanted", "volunteers wanted", "first issue",
-                  "open source contributors welcomed"}
+# Labels that mean a maintainer is actively recruiting outside help. analyze.py is the
+# producer and scoring.py the consumer, so a narrower producer silently drops signals
+# the consumer expects (enhancement / feature-request / accepted were collected by
+# nobody). The *decision* lives in scoring.is_welcome_label() — one implementation, so
+# the two cannot drift apart again (they did: the consumer learned to normalise
+# decorated spellings like '❓ help wanted', the producer still did not, and 8 real
+# welcome labels were dropped on the floor). This set is therefore **derived**, not
+# re-declared: a second copy of the vocabulary is exactly the drift risk being removed.
+WELCOME_LABELS = set(scoring._WELCOME_LABELS)
 
 # author_association values that reliably indicate a maintainer. CONTRIBUTOR is included
 # on purpose: on company-hosted projects the founder and core maintainers often hold no

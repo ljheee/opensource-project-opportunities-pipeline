@@ -27,14 +27,7 @@ EASY_KEYWORDS    = ["ui", "docs", "documentation", "example", "examples",
 
 LEVEL_UP = {"low": "medium", "medium": "high", "high": "high"}
 
-# Labels that signal a maintainer is actively recruiting outside help. analyze.py
-# collects against this same set, so the producer can never be narrower than the
-# consumer (a mismatch silently swallowed `enhancement`/`feature-request`/`accepted`).
-_WELCOME_LABELS = {"help wanted", "help-wanted", "good first issue", "good-first-issue",
-                   "enhancement", "feature-request", "feature request", "accepted",
-                   "pr welcome", "contributions welcome"}
-
-# ── welcome label 归一化 ─────────────────────────────────────────────────────
+# ── welcome label 判定 ───────────────────────────────────────────────────────
 # 真实仓库的 label 写法五花八门，精确字符串匹配会全部落空。2026-10-20 实测 8 条
 # 真实欢迎标签因此被判 unknown：'❓ help wanted'（emoji 前缀）、'E-help-wanted'
 # （单字母前缀）、'contribution welcome'（单复数与词表相反）、
@@ -67,13 +60,19 @@ _LABEL_NAMESPACE_PREFIXES = {
 }
 
 
-def _canonical_label(label: str) -> str:
+def _canonical_label(label: str, drop_short_prefix: bool = False) -> str:
     """Strip decoration from a label so decorated spellings collapse together.
 
-    Removes emoji and punctuation, an optional namespace prefix, a short leading
-    token ('E-help-wanted' → 'help wanted'), and folds a trailing plural 's'
-    ('contributions' ≡ 'contribution'). Both sides of a comparison go through this,
-    so the fold is consistent.
+    Removes emoji and punctuation, an optional namespace prefix ('status: volunteer
+    wanted' → 'volunteer wanted'), and folds a trailing plural 's'
+    ('contributions' ≡ 'contribution').
+
+    `drop_short_prefix` additionally drops a ≤2-character leading token
+    ('E-help-wanted' → 'help wanted'). It is **off by default** because it is
+    destructive: with it on, 'pr welcome' collapses to 'welcome', and a repo whose
+    label is literally "Welcome" would then match the welcome vocabulary. Callers
+    match against a *set*, so trying the stripped form as an extra candidate is
+    safe; making it the default spelling is not.
     """
     if not label:
         return ""
@@ -83,7 +82,7 @@ def _canonical_label(label: str) -> str:
         return ""
     if len(tokens) > 1 and tokens[0] in _LABEL_NAMESPACE_PREFIXES:
         tokens = tokens[1:]
-    if len(tokens) > 1 and len(tokens[0]) <= 2:
+    if drop_short_prefix and len(tokens) > 1 and len(tokens[0]) <= 2:
         tokens = tokens[1:]
     tokens = [t[:-1] if len(t) > 3 and t.endswith("s") else t for t in tokens]
     return " ".join(tokens)
@@ -91,6 +90,19 @@ def _canonical_label(label: str) -> str:
 
 _CANON_EXPLICIT = {_canonical_label(x) for x in _WELCOME_LABELS_EXPLICIT}
 _CANON_EXTRA = {_canonical_label(x) for x in _EXTRA_WELCOME_LABELS}
+
+# 词表全集，供外部引用（analyze.py 的 WELCOME_LABELS 由它派生）。
+# **判定走 is_welcome_label()，不走这个集合** —— 2026-10-21 之前 _WELCOME_LABELS
+# 是判定依据，现在它只是三份行为集合的并集视图；留着它是因为外部代码和
+# tests/test_regressions.py 要引用「生产者词表不窄于消费者词表」这条不变式。
+_WELCOME_LABELS = (_WELCOME_LABELS_EXPLICIT | _WELCOME_LABELS_EXACT_ONLY
+                   | _EXTRA_WELCOME_LABELS)
+
+
+def _canonical_variants(label: str):
+    """The spellings of a label worth trying: as-is, and without a short prefix."""
+    yield _canonical_label(label)
+    yield _canonical_label(label, drop_short_prefix=True)
 
 
 def is_welcome_label(label) -> bool:
@@ -106,8 +118,8 @@ def is_welcome_label(label) -> bool:
     raw = label.strip().lower()
     if raw in _WELCOME_LABELS_EXACT_ONLY or raw in _WELCOME_LABELS_EXPLICIT:
         return True
-    canon = _canonical_label(label)
-    return canon in _CANON_EXPLICIT or canon in _CANON_EXTRA
+    return any(canon in _CANON_EXPLICIT or canon in _CANON_EXTRA
+               for canon in _canonical_variants(label))
 
 
 def _loads_evidence(raw):

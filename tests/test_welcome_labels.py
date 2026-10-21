@@ -63,6 +63,18 @@ class TestWelcomeLabelNormalisation(unittest.TestCase):
             with self.subTest(label=label):
                 self.assertFalse(scoring.is_welcome_label(label))
 
+    def test_a_label_named_welcome_is_not_a_welcome_signal(self):
+        """Regression: stripping a short leading token collapsed 'pr welcome' to
+        'welcome', so a repo whose label is literally 'Welcome' matched."""
+        for label in ("Welcome", "welcome", "Welcome to the project"):
+            with self.subTest(label=label):
+                self.assertFalse(scoring.is_welcome_label(label))
+
+    def test_pr_welcome_still_matches(self):
+        for label in ("pr welcome", "pr-welcome", "PR Welcome", "pull request welcome"):
+            with self.subTest(label=label):
+                self.assertTrue(scoring.is_welcome_label(label))
+
 
 class TestProducerConsumerContract(unittest.TestCase):
     """analyze.py produces welcome_labels; scoring.py consumes them."""
