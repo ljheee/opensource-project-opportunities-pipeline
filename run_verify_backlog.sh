@@ -44,6 +44,60 @@ REMAIN=$(sqlite3 "$DB" \
   "SELECT COUNT(*) FROM opportunities WHERE status='open' AND value IN ('high','medium');")
 echo "=== verify backlog: 存量 $REMAIN 条，本次预算 $BUDGET 条，每批 $BATCH_SIZE ==="
 
+
+# ── 看门狗 ───────────────────────────────────────────────────────────────────
+# verify 会话可能**静默挂死**：2026-10-21 实测单批挂 2 小时、20 条一行未写。
+# 脚本原本的重试只在 CLI 非零退出时触发，而挂死的进程不会退出 → 整轮卡住。
+# 改为：后台跑 CLI，同时轮询本批行的 status 变化（verify prompt 每条裁决写库后
+# 立即 commit，所以行状态变化就是真实进度）。连续 ${VERIFY_STALL_MINUTES} 分钟
+# 无进展就杀掉进程，交给已有的重试逻辑。
+VERIFY_STALL_MINUTES="${VERIFY_STALL_MINUTES:-15}"
+
+_count_judged() {
+  local _csv="$1"
+  sqlite3 "$DB" "SELECT COUNT(*) FROM opportunities
+                 WHERE id IN ($_csv) AND status IN ('verified','refuted');"
+}
+
+_run_verify_watchdog() {
+  local _prompt="$1" _csv="$2" _out="$3"
+  local _prev _now _idle=0 _pid _rc
+  _prev=$(_count_judged "$_csv")
+
+  if echo "$CLI_TOOL" | grep -qE "cursor-agent|agent"; then
+    eval "$CLI_TOOL" < "$_prompt" > "$_out" 2>&1 &
+  else
+    eval "$CLI_TOOL" --print - < "$_prompt" > "$_out" 2>&1 &
+  fi
+  _pid=$!
+
+  while kill -0 "$_pid" 2>/dev/null; do
+    sleep 30
+    _now=$(_count_judged "$_csv")
+    if [ "$_now" -gt "$_prev" ]; then
+      _prev=$_now
+      _idle=0
+      continue
+    fi
+    _idle=$((_idle + 1))
+    if [ "$_idle" -ge $((VERIFY_STALL_MINUTES * 2)) ]; then
+      echo "WARN: verify 会话 ${VERIFY_STALL_MINUTES} 分钟无进展（本批已裁决 ${_prev} 条），杀掉后重试"
+      pkill -P "$_pid" 2>/dev/null
+      kill "$_pid" 2>/dev/null
+      sleep 3
+      pkill -9 -P "$_pid" 2>/dev/null
+      kill -9 "$_pid" 2>/dev/null
+      wait "$_pid" 2>/dev/null
+      cat "$_out"
+      return 1
+    fi
+  done
+  wait "$_pid"
+  _rc=$?
+  cat "$_out"
+  return $_rc
+}
+
 all_opp_ids=""
 processed=0
 while [ "$processed" -lt "$BUDGET" ]; do
@@ -75,10 +129,8 @@ while [ "$processed" -lt "$BUDGET" ]; do
   while [ "$_attempt" -le "${#_backoffs[@]}" ]; do
     _attempt=$((_attempt + 1))
     [ "$_attempt" -gt 1 ] && echo "[backlog] verify 第 $_attempt 次尝试..."
-    if echo "$CLI_TOOL" | grep -qE "cursor-agent|agent"; then
-      if eval "$CLI_TOOL" < "$_VERIFY_TMP"; then _ok=1; break; fi
-    else
-      if eval "$CLI_TOOL" --print - < "$_VERIFY_TMP"; then _ok=1; break; fi
+    if _run_verify_watchdog "$_VERIFY_TMP" "$opp_csv" "/tmp/verify_backlog_out.$$"; then
+      _ok=1; break
     fi
     if [ "$_attempt" -le "${#_backoffs[@]}" ]; then
       echo "WARN: verify 第 $_attempt 次失败，${_backoffs[$((_attempt - 1))]}s 后重试..."
