@@ -143,7 +143,8 @@ UPDATE projects SET status = 'analyzing'                        WHERE id = '<pro
   - 含 "PR welcome"/"good first issue"/"help wanted"/"contributions welcome" → 填入 `maintainer_responses`：`{"body_quote": "<引用原文>"}`
   - 含 "won't fix"/"out of scope"/"by design"/"not planned" → 填入 `maintainer_responses`：`{"body_quote": "<引用原文>"}`
   - 无明确表态 → 不填（不要填入无信号的评论）
-- issue 上的 "help wanted"/"good first issue" 标签 → 填入 `welcome_labels` 数组
+- issue 上表示「欢迎外部贡献」的标签（"help wanted"/"good first issue"/"pr welcome"/"contributions welcome"/"needs contributor" 等）→ 填入 `welcome_labels` 数组。
+  **只放欢迎类标签，不要放该 issue 的完整 label 列表**——`feature`/`enhancement`/`bug`/`question`/`triage`/`roadmap` 这类是分类/流程标签，不是欢迎信号，填进去会被规则读成维护者在招外部贡献。
 - 将收集到的原始数据填入 `maintainer_evidence` JSON，**不要填写信号判断结论**（scoring.py 会据此计算 `maintainer_signal` 和调整 value）
 - 不要直接写入 `maintainer_signal` 或修改 `value` 字段，由 scoring.py 统一计算
 

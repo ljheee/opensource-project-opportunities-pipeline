@@ -270,7 +270,7 @@ ORDER BY o.project_id, o.source_type;
 ```
 
 **`welcome_labels` 只放「欢迎外部贡献」类的 label，不要放该 issue 的完整 label 列表。**
-（2026-10-20 实测 137 条 opportunity 的 `welcome_labels` 里装的是 `feature` / `bug` / `question` /
+（2026-10-20 实测 137 条 low 机会点的 `welcome_labels` 里装的是 `feature` / `bug` / `question` /
 `triage` / `roadmap` 之类——那是 issue 的全部标签，不是欢迎标签。规则侧靠精确匹配挡下了它们，
 但这是巧合：只要有人把 `feature` 认作欢迎类，137 行会集体被误判成 `welcoming` 并被提升一档。）
 

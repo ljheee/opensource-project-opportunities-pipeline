@@ -180,6 +180,16 @@ ORDER BY o.project_id, o.source_type;
 }
 ```
 
+**`welcome_labels` 只放「欢迎外部贡献」类的 label，不要放该 issue 的完整 label 列表。**
+（2026-10-20 实测 137 条 low 机会点的 `welcome_labels` 里装的是 `feature` / `bug` / `question` /
+`triage` / `roadmap` 之类——那是 issue 的全部标签，不是欢迎标签。规则侧靠精确匹配挡下了它们，
+但这是巧合：只要有人把 `feature` 认作欢迎类，137 行会集体被误判成 `welcoming` 并被提升一档。）
+
+判据：label 本身说明**维护者在招外部贡献**才算。算的例子：`help wanted`、`good first issue`、
+`pr welcome`、`contributions welcome`、`needs contributor`、`volunteer wanted`。
+不算的例子：`feature`、`enhancement`、`bug`、`question`、`triage`、`roadmap`、`documentation`、
+`priority-high`（这些是分类/流程标签，不表示欢迎）。
+
 **判断规则**：
 - `maintainer_comment` 含拒绝语义 → `rejected`
 - `welcome_labels` 非空 或 `maintainer_responses` 含正向表态（维护者明说欢迎 / 邀请外部提 PR）→ `welcoming`

@@ -11,6 +11,20 @@ def get_conn():
     return sqlite3.connect(DB_PATH)
 
 
+def _title_cell(o) -> str:
+    """Markdown table cell for an opportunity title.
+
+    Escapes the characters that would break a table cell, and turns the title into
+    a link when source_ref is a full GitHub issue URL (issue/performance/security/
+    compatibility rows store the URL, other rows store `issue:<n>`).
+    """
+    title_text = (o['title'] or '').replace('\\', '\\\\').replace('[', '\\[').replace(']', '\\]').replace('|', '\\|').replace('\n', ' ').replace('\r', '')
+    source_ref = o['source_ref'] or ''
+    if source_ref.startswith('https://'):
+        return f"[{title_text}]({source_ref})"
+    return title_text
+
+
 def render_report(date: str) -> str:
     conn = None
     try:
@@ -125,18 +139,11 @@ def render_report(date: str) -> str:
     ]
 
     for o in opps:
-        title_text = (o['title'] or '').replace('\\', '\\\\').replace('[', '\\[').replace(']', '\\]').replace('|', '\\|').replace('\n', ' ').replace('\r', '')
-        source_ref = o['source_ref'] or ''
-        # issue/security/performance/compatibility 的 source_ref 是完整 GitHub issue URL，做超链接
-        if source_ref.startswith('https://'):
-            title_cell = f"[{title_text}]({source_ref})"
-        else:
-            title_cell = title_text
         signal = o['maintainer_signal'] or '—'
         verified_mark = '✓' if o['status'] == 'verified' else ''
         lines.append(
             f"| [{o['project_id']}]({o['project_url']}) "
-            f"| {title_cell} "
+            f"| {_title_cell(o)} "
             f"| `{o['source_type']}` "
             f"| {o['value']} "
             f"| {o['difficulty']} "
@@ -160,15 +167,9 @@ def render_report(date: str) -> str:
             "|------|------|------|------|------|------|------|",
         ]
         for o in verified_low:
-            title_text = (o['title'] or '').replace('\\', '\\\\').replace('[', '\\[').replace(']', '\\]').replace('|', '\\|').replace('\n', ' ').replace('\r', '')
-            source_ref = o['source_ref'] or ''
-            if source_ref.startswith('https://'):
-                title_cell = f"[{title_text}]({source_ref})"
-            else:
-                title_cell = title_text
             lines.append(
                 f"| [{o['project_id']}]({o['project_url']}) "
-                f"| {title_cell} "
+                f"| {_title_cell(o)} "
                 f"| `{o['source_type']}` "
                 f"| {o['value']} "
                 f"| {o['difficulty']} "
