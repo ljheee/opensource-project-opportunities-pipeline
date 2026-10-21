@@ -1,0 +1,2 @@
+{"opportunity_id": 3434, "project_id": "zenml-io/zenml", "source": "validate", "verdict": "corrected", "reason": "剥离/置空伪证据: strip:welcome_labels", "checks": [], "corrections": ["strip:welcome_labels"], "ts": "2026-10-21T03:26:04.962391+00:00"}
+{"opportunity_id": 5390, "project_id": "readysettech/readyset", "source": "validate", "verdict": "refuted", "reason": "issue #109 已关闭", "checks": ["issue:readysettech/readyset#109"], "corrections": [], "ts": "2026-10-21T03:26:04.962391+00:00"}

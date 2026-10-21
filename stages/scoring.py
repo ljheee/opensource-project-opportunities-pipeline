@@ -34,6 +34,81 @@ _WELCOME_LABELS = {"help wanted", "help-wanted", "good first issue", "good-first
                    "enhancement", "feature-request", "feature request", "accepted",
                    "pr welcome", "contributions welcome"}
 
+# ── welcome label 归一化 ─────────────────────────────────────────────────────
+# 真实仓库的 label 写法五花八门，精确字符串匹配会全部落空。2026-10-20 实测 8 条
+# 真实欢迎标签因此被判 unknown：'❓ help wanted'（emoji 前缀）、'E-help-wanted'
+# （单字母前缀）、'contribution welcome'（单复数与词表相反）、
+# 'status: volunteer wanted'（命名空间前缀）、'first-issue'、'needs contributor'、
+# 'Open Source Contributors Welcomed'。
+#
+# **只做装饰归一化（emoji / 命名空间前缀 / 连字符 / 单复数），不做同义词扩展。**
+# 归一化按两类分开处理，原因见下面的 _WELCOME_LABELS_EXACT_ONLY。
+
+# 明确表示「欢迎外部贡献」的措辞：允许装饰归一化。
+_WELCOME_LABELS_EXPLICIT = {
+    "help wanted", "good first issue", "pr welcome", "pull request welcome",
+    "contributions welcome",
+}
+# 弱欢迎语义：只做精确匹配，不做归一化。这类标签常被**报告者自己**贴上
+# （见 self-applied-enhancement-label-fakes-welcoming）——一旦允许归一化，
+# 'type: enhancement' / '⭐ enhancement' 会集体伪装成欢迎信号。
+_WELCOME_LABELS_EXACT_ONLY = {
+    "enhancement", "feature-request", "feature request", "accepted",
+}
+# 同样属于「明确欢迎」的补充 label 措辞，无歧义。
+_EXTRA_WELCOME_LABELS = {
+    "needs contributor", "contributor wanted", "volunteer wanted", "volunteers wanted",
+    "first issue", "open source contributors welcomed",
+}
+# 命名空间前缀（label 里形如 'type:' 'status:' 'kind:' 的那一段）。
+_LABEL_NAMESPACE_PREFIXES = {
+    "type", "kind", "status", "part", "area", "component", "category",
+    "scope", "priority", "prio", "topic", "module", "team", "label",
+}
+
+
+def _canonical_label(label: str) -> str:
+    """Strip decoration from a label so decorated spellings collapse together.
+
+    Removes emoji and punctuation, an optional namespace prefix, a short leading
+    token ('E-help-wanted' → 'help wanted'), and folds a trailing plural 's'
+    ('contributions' ≡ 'contribution'). Both sides of a comparison go through this,
+    so the fold is consistent.
+    """
+    if not label:
+        return ""
+    s = re.sub(r"[^\w]+", " ", str(label).strip().lower())
+    tokens = [t for t in s.split() if t]
+    if not tokens:
+        return ""
+    if len(tokens) > 1 and tokens[0] in _LABEL_NAMESPACE_PREFIXES:
+        tokens = tokens[1:]
+    if len(tokens) > 1 and len(tokens[0]) <= 2:
+        tokens = tokens[1:]
+    tokens = [t[:-1] if len(t) > 3 and t.endswith("s") else t for t in tokens]
+    return " ".join(tokens)
+
+
+_CANON_EXPLICIT = {_canonical_label(x) for x in _WELCOME_LABELS_EXPLICIT}
+_CANON_EXTRA = {_canonical_label(x) for x in _EXTRA_WELCOME_LABELS}
+
+
+def is_welcome_label(label) -> bool:
+    """Whether a GitHub label means outside help is wanted.
+
+    Exact match first (unchanged behaviour), then a decoration-normalised match
+    against the explicitly-welcoming set only. The weak set (`enhancement` and
+    friends) never gets the normalised path — a decorated 'enhancement' is still
+    the self-applied label it always was.
+    """
+    if not isinstance(label, str) or not label:
+        return False
+    raw = label.strip().lower()
+    if raw in _WELCOME_LABELS_EXACT_ONLY or raw in _WELCOME_LABELS_EXPLICIT:
+        return True
+    canon = _canonical_label(label)
+    return canon in _CANON_EXPLICIT or canon in _CANON_EXTRA
+
 
 def _loads_evidence(raw):
     """Parse an evidence blob defensively.
@@ -216,7 +291,7 @@ def score_maintainer_signal(me: dict) -> str:
         if _matches_any(body, REJECT_KEYWORDS):
             signals.append(("rejected", 0))
 
-    if any(isinstance(lbl, str) and lbl.lower() in _WELCOME_LABELS for lbl in welcome_labels):
+    if any(is_welcome_label(lbl) for lbl in welcome_labels):
         signals.append(("welcoming", 0))
 
     if not signals:

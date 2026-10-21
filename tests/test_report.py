@@ -48,3 +48,57 @@ class TestReportStatusFilter(unittest.TestCase):
         self.assertIn("| 开放机会点 | 2 |", content)
         self.assertIn("| 今日新增   | 2 个机会点 |", content)
         self.assertIn("| 已验证机会点 | 1 |", content)
+
+
+class TestVerifiedLowSupplement(unittest.TestCase):
+    """A verified row scored `low` is a contradiction — verification said it holds,
+    the rule said it isn't worth anything. The main table filters on value, so those
+    rows fall out of the report entirely; they get their own section instead."""
+
+    def _build_db(self, path):
+        conn = sqlite3.connect(path)
+        conn.executescript("""
+            CREATE TABLE projects (id TEXT PRIMARY KEY, url TEXT, stars INTEGER,
+                                   language TEXT, status TEXT, latest_release TEXT);
+            CREATE TABLE project_meta (project_id TEXT, canonical_name TEXT,
+                                       canonical_lang TEXT, canonical_url TEXT);
+            CREATE TABLE tasks (id INTEGER PRIMARY KEY, project_id TEXT, task_date TEXT,
+                                task_type TEXT, trigger_reason TEXT, status TEXT);
+            CREATE TABLE opportunities (
+                id INTEGER PRIMARY KEY, project_id TEXT, task_id INTEGER,
+                source_type TEXT, source_ref TEXT, title TEXT,
+                value TEXT, difficulty TEXT, urgency TEXT, maintainer_signal TEXT,
+                status DEFAULT 'open', first_seen_at TEXT, last_seen_at TEXT);
+        """)
+        conn.execute("INSERT INTO projects VALUES ('o/r','https://github.com/o/r',100,'Go','active','v1')")
+        conn.execute("INSERT INTO tasks VALUES (1,'o/r','2026-07-30','triggered','x','done')")
+        base = "INSERT INTO opportunities (project_id, task_id, source_type, source_ref, title," \
+               " value, difficulty, urgency, maintainer_signal, status, first_seen_at) VALUES" \
+               " ('o/r',1,'issue','issue:1',?,'low','medium','high',?,?,'2026-07-30T01:00:00+00:00')"
+        conn.execute(base, ("verified but low", "unknown", "verified"))
+        conn.execute(base, ("open but low", "unknown", "open"))
+        conn.commit()
+        conn.close()
+
+    def test_verified_low_is_listed_in_the_supplement(self):
+        with tempfile.TemporaryDirectory() as d:
+            db = os.path.join(d, "t.db")
+            self._build_db(db)
+            with mock.patch.object(report, "DB_PATH", db):
+                content = report.render_report("2026-07-30")
+        self.assertIn("## 已验证但评级偏低的补充机会", content)
+        self.assertIn("verified but low", content)
+        # open+low 没有通过对抗验证，不进补充章节
+        self.assertNotIn("open but low", content)
+
+    def test_supplement_is_omitted_when_there_is_nothing_to_supplement(self):
+        with tempfile.TemporaryDirectory() as d:
+            db = os.path.join(d, "t.db")
+            self._build_db(db)
+            conn = sqlite3.connect(db)
+            conn.execute("UPDATE opportunities SET status='open'")
+            conn.commit()
+            conn.close()
+            with mock.patch.object(report, "DB_PATH", db):
+                content = report.render_report("2026-07-30")
+        self.assertNotIn("## 已验证但评级偏低的补充机会", content)

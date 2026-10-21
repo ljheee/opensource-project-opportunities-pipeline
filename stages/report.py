@@ -48,6 +48,28 @@ def render_report(date: str) -> str:
               CASE o.difficulty WHEN 'low' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END
         """, (date,)).fetchall()
 
+        # 已通过对抗验证、但规则评分给了 low 的行。
+        # 这是「验证说好、规则说不值」的矛盾状态：上游表按 value IN ('high','medium') 过滤，
+        # 这类行会被整类漏掉。2026-10-20 实测全库有 22 条（占已验证行的 2.6%），全是
+        # 「无 canonical 参照 + reactions<5」被判 low 的行——它们不是陈旧评分，是规则与
+        # 语义层真的冲突，列出来供人工判断。
+        verified_low = conn.execute("""
+            SELECT o.*, p.url as project_url, p.language
+            FROM opportunities o
+            JOIN projects p ON p.id = o.project_id
+            WHERE o.project_id IN (
+                SELECT DISTINCT project_id FROM tasks
+                WHERE task_date = ? AND status = 'done'
+            )
+              AND o.value = 'low'
+              AND o.difficulty IS NOT NULL
+              AND o.urgency IS NOT NULL
+              AND o.status = 'verified'
+            ORDER BY
+              CASE o.urgency WHEN 'high' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END,
+              CASE o.difficulty WHEN 'low' THEN 0 WHEN 'medium' THEN 1 ELSE 2 END
+        """, (date,)).fetchall()
+
         # 全局统计
         stats = conn.execute("""
             SELECT
@@ -122,6 +144,37 @@ def render_report(date: str) -> str:
             f"| {signal} "
             f"| {verified_mark} |"
         )
+
+    if verified_low:
+        lines += [
+            "",
+            "---",
+            "",
+            "## 已验证但评级偏低的补充机会",
+            "",
+            "> 这些机会点**已通过对抗性验证**（`status=verified`），规则评分却给了 `low`。"
+            "「验证说好、规则说不值」是矛盾状态——上面那张表按价值过滤，会把它们整类漏掉，"
+            "所以单列在这里供人工判断。",
+            "",
+            "| 项目 | 标题 | 类型 | 价值 | 难度 | 紧迫 | 信号 |",
+            "|------|------|------|------|------|------|------|",
+        ]
+        for o in verified_low:
+            title_text = (o['title'] or '').replace('\\', '\\\\').replace('[', '\\[').replace(']', '\\]').replace('|', '\\|').replace('\n', ' ').replace('\r', '')
+            source_ref = o['source_ref'] or ''
+            if source_ref.startswith('https://'):
+                title_cell = f"[{title_text}]({source_ref})"
+            else:
+                title_cell = title_text
+            lines.append(
+                f"| [{o['project_id']}]({o['project_url']}) "
+                f"| {title_cell} "
+                f"| `{o['source_type']}` "
+                f"| {o['value']} "
+                f"| {o['difficulty']} "
+                f"| {o['urgency']} "
+                f"| {o['maintainer_signal'] or '—'} |"
+            )
 
     lines += ["", "---", "", f"*生成时间: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*", ""]
     return "\n".join(lines)
