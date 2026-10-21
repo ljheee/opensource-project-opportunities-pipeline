@@ -67,35 +67,66 @@ _run_verify_watchdog() {
   if echo "$CLI_TOOL" | grep -qE "cursor-agent|agent"; then
     eval "$CLI_TOOL" < "$_prompt" > "$_out" 2>&1 &
   else
-    eval "$CLI_TOOL" --print - < "$_prompt" > "$_out" 2>&1 &
+    # --output-format stream-json：会话的每个事件**实时**落盘，于是「输出文件在长」
+    # 就是可靠的心跳。纯 --print 只在会话结束时才吐字，健康的重批（先做 40 分钟
+    # code search 再一次性写库）和挂死的会话在文本上完全一样。
+    eval "$CLI_TOOL" --print --output-format stream-json --verbose - < "$_prompt" > "$_out" 2>&1 &
   fi
   _pid=$!
 
+  local _size_prev _size_now
+  _size_prev=$(wc -c < "$_out" 2>/dev/null || echo 0)
   while kill -0 "$_pid" 2>/dev/null; do
     sleep 30
+    _size_now=$(wc -c < "$_out" 2>/dev/null || echo 0)
     _now=$(_count_judged "$_csv")
-    if [ "$_now" -gt "$_prev" ]; then
+    if [ "$_now" -gt "$_prev" ] || [ "$_size_now" -gt "$_size_prev" ]; then
+      # 两种进展都算活着：写库（真实进度）或输出在长（会话在干活）
       _prev=$_now
+      _size_prev=$_size_now
       _idle=0
       continue
     fi
     _idle=$((_idle + 1))
     if [ "$_idle" -ge $((VERIFY_STALL_MINUTES * 2)) ]; then
-      echo "WARN: verify 会话 ${VERIFY_STALL_MINUTES} 分钟无进展（本批已裁决 ${_prev} 条），杀掉后重试"
+      echo "WARN: verify 会话 ${VERIFY_STALL_MINUTES} 分钟无进展（输出未增长、本批已裁决 ${_prev} 条），杀掉后重试"
       pkill -P "$_pid" 2>/dev/null
       kill "$_pid" 2>/dev/null
       sleep 3
       pkill -9 -P "$_pid" 2>/dev/null
       kill -9 "$_pid" 2>/dev/null
       wait "$_pid" 2>/dev/null
-      cat "$_out"
+      _dump_verify_output "$_out"
       return 1
     fi
   done
   wait "$_pid"
   _rc=$?
-  cat "$_out"
+  _dump_verify_output "$_out"
   return $_rc
+}
+
+# stream-json 的最后一条 assistant 消息就是 judge 的结论文本；整份 JSON 事件流对人
+# 不可读，只把结论文本打进日志。
+_dump_verify_output() {
+  local _f="$1"
+  [ -s "$_f" ] || return 0
+  python3 - "$_f" <<'PYEOF' 2>/dev/null || tail -5 "$_f"
+import json, sys
+last = ""
+for line in open(sys.argv[1]):
+    try:
+        d = json.loads(line)
+    except Exception:
+        continue
+    if d.get("type") == "assistant":
+        c = (d.get("message") or {}).get("content")
+        if isinstance(c, list):
+            t = "".join(b.get("text", "") for b in c if isinstance(b, dict))
+            if t.strip():
+                last = t
+print(last)
+PYEOF
 }
 
 all_opp_ids=""
