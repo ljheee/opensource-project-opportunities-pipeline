@@ -163,10 +163,11 @@ def render_report(date: str) -> str:
             "「验证说好、规则说不值」是矛盾状态——上面那张表按价值过滤，会把它们整类漏掉，"
             "所以单列在这里供人工判断。",
             "",
-            "| 项目 | 标题 | 类型 | 价值 | 难度 | 紧迫 | 信号 |",
-            "|------|------|------|------|------|------|------|",
+            "| 项目 | 标题 | 类型 | 价值 | 难度 | 紧迫 | 信号 | 首次发现 |",
+            "|------|------|------|------|------|------|------|------|",
         ]
         for o in verified_low:
+            seen = (o['first_seen_at'] or '')[:10] or '—'
             lines.append(
                 f"| [{o['project_id']}]({o['project_url']}) "
                 f"| {_title_cell(o)} "
@@ -174,7 +175,8 @@ def render_report(date: str) -> str:
                 f"| {o['value']} "
                 f"| {o['difficulty']} "
                 f"| {o['urgency']} "
-                f"| {o['maintainer_signal'] or '—'} |"
+                f"| {o['maintainer_signal'] or '—'} "
+                f"| {seen} |"
             )
 
     lines += ["", "---", "", f"*生成时间: {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}*", ""]

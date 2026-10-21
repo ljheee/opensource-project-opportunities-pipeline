@@ -15,7 +15,11 @@ data/.pipeline.lock
 data/verify_log/.pending_*
 # LLM 运行时生成的临时执行脚本（决策已写入 DB，脚本本身无需版本追踪）
 scripts/
+# 归档的阶段脚本快照（analyze_2026_04_19.py 之类）与 LLM 临时脚本不入库。
+# 活的 stages/analyze.py 必须显式放行——否则通配符会把它一起挡掉，
+# 新增文件连 `git add` 都会报 "ignored by one of your .gitignore files"。
 stages/analyze*.py
+!stages/analyze.py
 stages/stage*.py
 stages/filter*.py
 

@@ -50,17 +50,17 @@ ORDER BY o.project_id, o.source_type;
 1. **是否真实存在**
    - `feature_gap` 类型：确认目标项目确实没有该功能。可能只是目录命名不同（如 `circuitbreaker` vs `circuit-breaker`）。若明显已实现或命名差异，请丢弃。
    - `issue`/`performance`/`security`/`compatibility` 类型：确认 issue 描述确实代表一个可贡献的改进点，而不是用户提问、文档缺失或已关闭的误报。
-     - 若 `value_evidence` 里有 `issue_state` / `issue_state_reason` / `linked_pr` 三个字段（本批的证据刷新会写入），**先读它们再下判断**：
-       - `issue_state = "closed"`：**不要**只凭 state 就丢弃——先读该 issue 线程**最后一条**维护者评论（见 `last_maintainer_response`）判断关闭原因：
-         - 「已修复 / 已交付 / 不再计划 / wontfix」→ **DELETE**
-         - 「与 #N 重复」→ 先查 #N 是否已入册（`SELECT id,status,source_ref FROM opportunities WHERE project_id='<pid>' AND status<>'draft' AND (source_ref='issue:N' OR source_ref LIKE '%/issues/N');`）：
-           已入册 → **DELETE**（同一诉求已有记录）；未入册 → **保留**，并在 `value_evidence` 写 `"duplicate_of": N`
-           （**不要**改 `source_ref`，会撞 UNIQUE 键）
-         - 「过期 / 无人响应」而诉求本身仍成立 → **保留**，并在 `value_evidence` 写 `"closed_reason": "stale"`
-         - 判不出来 → **保留**（不确定时宁可保留）
-       - `linked_pr = true` → 已经有人动手做这件事：
-         - 那个 PR 已合入、且标题逐字复述了本诉求 → **DELETE**（诉求已被交付）
-         - PR 还在评审中 / 标题与诉求无关 → **保留**，并把 PR 标题写进 `value_evidence.linked_pr_title`
+     - **「已关闭的 issue」与「已有 linked PR」不在本阶段判**——`prompts/verify_v3.md` 的
+       「issue 现状」和「是否已有 linked PR」两项会在对抗验证阶段用 API 查实并 refute，
+       `stages/validate.py` 也会再查一遍。在本阶段重复判断只会给出与下游冲突的结论。
+     - **重复入册要在这里判**（下游不会）：同一诉求在库里已有记录时不要开第二条。
+       查法（`issue:N` 与完整 URL 是同一个 issue）：
+       ```sql
+       SELECT id, status, source_type, source_ref, title FROM opportunities
+       WHERE project_id = '<pid>' AND status <> 'draft'
+         AND (source_ref = 'issue:<N>' OR source_ref LIKE '%/issues/<N>');
+       ```
+       有命中 → **DELETE**（同一诉求已入册）；无命中 → 正常继续。
 
 2. **canonical 参照是否正确**
    - 如果 `canonical_url` 为空或明显错误，不要把机会点价值建立在不存在的对照上。
@@ -276,8 +276,12 @@ ORDER BY o.project_id, o.source_type;
 
 判据：label 本身说明**维护者在招外部贡献**才算。算的例子：`help wanted`、`good first issue`、
 `pr welcome`、`contributions welcome`、`needs contributor`、`volunteer wanted`。
-不算的例子：`feature`、`enhancement`、`bug`、`question`、`triage`、`roadmap`、`documentation`、
+不算的例子：`feature`、`bug`、`question`、`triage`、`roadmap`、`documentation`、
 `priority-high`（这些是分类/流程标签，不表示欢迎）。
+
+`enhancement` / `feature-request` / `accepted` 另有一层理由：规则的历史词表仍认它们，
+但**报告者通常在提 issue 的同一秒自己贴上**（常常还附带 self-assign），
+写进去等于伪造「维护者欢迎外部贡献」，并让 `value` 被抬高一档。**不要写。**
 
 **判断规则**：
 - `maintainer_comment` 含拒绝语义 → `rejected`

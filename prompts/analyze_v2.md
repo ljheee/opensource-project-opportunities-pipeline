@@ -187,8 +187,19 @@ ORDER BY o.project_id, o.source_type;
 
 判据：label 本身说明**维护者在招外部贡献**才算。算的例子：`help wanted`、`good first issue`、
 `pr welcome`、`contributions welcome`、`needs contributor`、`volunteer wanted`。
-不算的例子：`feature`、`enhancement`、`bug`、`question`、`triage`、`roadmap`、`documentation`、
+不算的例子：`feature`、`bug`、`question`、`triage`、`roadmap`、`documentation`、
 `priority-high`（这些是分类/流程标签，不表示欢迎）。
+
+`enhancement` / `feature-request` / `accepted` 另有一层理由：规则的历史词表仍认它们，
+但**报告者通常在提 issue 的同一秒自己贴上**（常常还附带 self-assign），
+写进去等于伪造「维护者欢迎外部贡献」，并让 `value` 被抬高一档。**不要写。**
+
+`maintainer_responses` 是按「决策权重 → 身份置信度 → 评论序号」排序后取前 2 条的，
+**它很可能不是线程里最后一条**：一句早期但措辞强烈的表态会盖住线程末尾的更新。
+采集阶段另外写了 `last_maintainer_response`（线程里**最后一条**维护者评论，正文保留首尾）
+和 `maintainer_response_count`（维护者评论条数，0 = 从没人回复过）。
+**判「维护者是否已宣布交付」时两个都要读，末尾那条优先**——2026-09 有 3 个案例，
+判向全部被线程最后一条评论翻转。
 
 **判断规则**：
 - `maintainer_comment` 含拒绝语义 → `rejected`

@@ -80,12 +80,25 @@ class TestProducerConsumerContract(unittest.TestCase):
     """analyze.py produces welcome_labels; scoring.py consumes them."""
 
     def test_collect_accepts_everything_the_consumer_accepts(self):
-        """The producer must never be narrower than the consumer."""
-        for label in ("❓ help wanted", "E-help-wanted", "Contribution Welcome",
-                      "status: volunteer wanted", "needs contributor", "first-issue",
-                      "Open Source Contributors Welcomed", "help wanted"):
+        """The producer must never be narrower than the consumer.
+
+        Derived from the vocabulary (so a newly added word is covered automatically)
+        plus the decorated spellings, which are not vocabulary entries themselves.
+        """
+        for label in list(scoring._WELCOME_LABELS) + [
+            "❓ help wanted", "E-help-wanted", "Contribution Welcome",
+            "status: volunteer wanted", "needs contributor", "first-issue",
+            "Open Source Contributors Welcomed",
+        ]:
             with self.subTest(label=label):
                 self.assertEqual(analyze._collect_welcome_labels([label]), [label])
+
+    def test_negated_labels_do_not_read_as_an_invitation(self):
+        """'no help wanted' must not collapse into 'help wanted'."""
+        for label in ("no help wanted", "no help-wanted", "in help wanted",
+                      "we need contributor", "to good first issue", "not pr welcome"):
+            with self.subTest(label=label):
+                self.assertFalse(scoring.is_welcome_label(label))
 
     def test_collect_drops_the_raw_label_list(self):
         """The refine stage used to dump the whole label list into welcome_labels."""

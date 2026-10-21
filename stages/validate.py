@@ -22,6 +22,14 @@ from urllib3.util.retry import Retry
 DEFAULT_DB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "pipeline.db")
 DEFAULT_LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "verify_log")
 
+# The welcome-label decision lives in scoring.py so this stage and the scorer agree
+# on what a welcome label is (see stages/analyze.py for the same import trick).
+_STAGES_DIR = os.path.dirname(os.path.abspath(__file__))
+_REPO_DIR = os.path.dirname(_STAGES_DIR)
+if _REPO_DIR not in sys.path:
+    sys.path.insert(0, _REPO_DIR)
+from stages.scoring import is_welcome_label  # noqa: E402
+
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 HEADERS = {"Accept": "application/vnd.github+json"}
 if GITHUB_TOKEN:
@@ -146,12 +154,21 @@ def validate_row(row: dict, gh, log) -> list:
         me["similar_prs"] = kept
         actions.append("strip:similar_prs")
 
-    # 3. welcome_labels 真伪（仅当能拿到 issue labels 时；feature_gap 行的 source_ref
-    #    不是 issue 引用，issue_data=None，本项自然跳过——labels 校验依赖 issue 存在）
+    # 3. welcome_labels 真伪 + 类别（仅当能拿到 issue labels 时；feature_gap 行的
+    #    source_ref 不是 issue 引用，issue_data=None，本项自然跳过——labels 校验依赖
+    #    issue 存在）
+    #
+    # 两道检查：
+    #   (a) 存在性——记下来的 label 必须真的在 issue 上（phantom 剥离）
+    #   (b) 类别——必须是「欢迎外部贡献」类。这一条以前只写在 prompt 里（judge 往
+    #       welcome_labels 里塞整个 label 列表，实测 137 条 low 行就是这样：
+    #       'feature'/'bug'/'question'/'triage'），靠 scoring.py 的精确匹配碰巧挡下。
+    #       本层已经拿到了 issue 的真实 label 列表，是最合适的执行点。
     labels_recorded = [l for l in me.get("welcome_labels", []) if isinstance(l, str)]
     if labels_recorded and issue_data is not None:
         actual = {l.get("name", "").lower() for l in issue_data.get("labels", []) if isinstance(l, dict)}
-        kept_labels = [l for l in labels_recorded if l.lower() in actual]
+        kept_labels = [l for l in labels_recorded
+                       if l.lower() in actual and is_welcome_label(l)]
         if len(kept_labels) != len(labels_recorded):
             me["welcome_labels"] = kept_labels
             actions.append("strip:welcome_labels")

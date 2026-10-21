@@ -40,8 +40,8 @@ _STAGES_DIR = os.path.dirname(os.path.abspath(__file__))
 _REPO_DIR = os.path.dirname(_STAGES_DIR)
 if _REPO_DIR not in sys.path:
     sys.path.insert(0, _REPO_DIR)
-from stages.scoring import is_welcome_label  # noqa: E402
 from stages import scoring  # noqa: E402
+from stages.scoring import is_welcome_label  # noqa: E402
 
 GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
 HEADERS = {"Accept": "application/vnd.github+json"}
@@ -489,6 +489,10 @@ def last_maintainer_response(comments) -> dict:
     a strongly-worded opening statement outranks the reply that later closed the
     question. Judging a thread by the last comment instead flipped 3/3 verdicts in
     a 2026-09 batch, so both views are recorded.
+
+    The body keeps **head and tail**: the decisive sentence in a long maintainer
+    comment is at the end ("this is now fixed in v2.4, closing"), and a head-only
+    truncation would hide exactly the part this field exists to show.
     """
     newest = None
     for c in comments or []:
@@ -501,7 +505,7 @@ def last_maintainer_response(comments) -> dict:
     if newest is None:
         return {}
     return {
-        "body_quote": (newest.get("body") or "")[:600],
+        "body_quote": _head_tail(newest.get("body") or ""),
         "author": (newest.get("user") or {}).get("login", ""),
         "author_association": (newest.get("author_association") or "").upper(),
         "created_at": newest.get("created_at") or "",
@@ -509,14 +513,26 @@ def last_maintainer_response(comments) -> dict:
 
 
 def count_maintainer_responses(comments) -> int:
-    """How many maintainer comments the thread has — a bare count says nothing on
-    its own, but 0 vs 12 tells the refine stage whether it is looking at a thread
-    that was ever answered."""
+    """How many maintainer comments the thread has.
+
+    0 means the thread was never answered by anyone — that is a fact the refine
+    stage needs (an unanswered thread is not an invitation), so it is recorded
+    alongside the newest comment.
+    """
     n = 0
     for c in comments or []:
         if isinstance(c, dict) and is_maintainer_signal((c.get("author_association") or "").upper()):
             n += 1
     return n
+
+
+def _head_tail(text: str, limit: int = 600) -> str:
+    """Keep both ends of a long body — the opening setup and the closing verdict."""
+    text = (text or "").replace("\r", "").strip()
+    if len(text) <= limit:
+        return text
+    half = (limit - 5) // 2
+    return f"{text[:half]} … {text[-half:]}"
 
 
 def _make_why_hard(source_type: str, title: str, body: str | None,
@@ -645,7 +661,13 @@ def _estimate_overall_score(opportunities: list[dict]) -> int:
         has_canonical = bool(ve.get("canonical_impl_url"))
         reactions = int(ve.get("issue_reactions") or 0)
         me = json.loads(opp.get("maintainer_evidence") or "{}")
-        welcoming = bool(me.get("welcome_labels"))
+        # 用与 scoring.py 同一个判定：welcome_labels 非空 ≠ welcoming（列表里可能是
+        # 'feature'/'bug' 这类分类标签）。两处各判一次，流水线对同一份证据会给出
+        # 两个不同的结论。
+        wl = me.get("welcome_labels") or []
+        if not isinstance(wl, list):
+            wl = []
+        welcoming = any(is_welcome_label(l) for l in wl)
         if has_canonical and (reactions >= 5 or welcoming):
             best = "high"
             break
@@ -895,7 +917,13 @@ def analyze_project(conn: sqlite3.Connection, task: dict, dry_run: bool = False)
                     "has_prod_signal": False,
                     "has_workaround": False,
                 }),
-                "maintainer_evidence": json.dumps({"similar_prs": [], "maintainer_responses": [], "welcome_labels": []}),
+                "maintainer_evidence": json.dumps({
+                    "similar_prs": [], "maintainer_responses": [], "welcome_labels": [],
+                    # feature_gap 没有 issue 线程，但 key 必须与 issue 路径同名同形，
+                    # 否则精炼阶段的「末尾那条维护者评论优先」规则在 feature_gap 行上
+                    # 静默不适用（读到一个不存在的 key）。
+                    "last_maintainer_response": {}, "maintainer_response_count": 0,
+                }),
                 "impl_hint": f"See canonical implementation: {feat_url}",
             })
 

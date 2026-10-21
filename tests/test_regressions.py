@@ -8,15 +8,26 @@ from stages import analyze, scoring
 class TestWelcomeLabelContract(unittest.TestCase):
     """P0-1: analyze.py collected 4 welcome labels, scoring.py consumed 10.
 
-    2026-10-21 起两边的词表都由 scoring.py 派生（analyze.WELCOME_LABELS =
-    scoring._WELCOME_LABELS），所以这条子集不变式现在由构造保证。真正的行为守卫在
-    tests/test_welcome_labels.py：逐个 label 比对生产者与消费者的判定结果。
+    2026-10-21 起两边的词表都由 scoring.py 定义（analyze.WELCOME_LABELS 是它的副本），
+    所以「生产者词表 ⊇ 消费者词表」这条断言已经变成同义反复。真正的守卫改成
+    **逐条比对判定结果**：词表里每一条，生产者收集它与消费者接受它必须同时成立。
     """
 
-    def test_analyze_collects_every_label_scoring_consumes(self):
-        self.assertTrue(
-            scoring._WELCOME_LABELS.issubset(analyze.WELCOME_LABELS),
-            f"analyze.py is missing: {sorted(scoring._WELCOME_LABELS - analyze.WELCOME_LABELS)}")
+    def test_producer_and_consumer_agree_on_every_vocabulary_entry(self):
+        for label in scoring._WELCOME_LABELS:
+            with self.subTest(label=label):
+                self.assertEqual(
+                    analyze._collect_welcome_labels([label]) == [label],
+                    scoring.is_welcome_label(label),
+                    f"producer/consumer disagree on {label!r}")
+
+    def test_vocabulary_excludes_classification_labels(self):
+        """These are category/triage labels — they must never read as an invitation."""
+        for banned in ("feature", "bug", "question", "triage", "roadmap",
+                       "documentation", "priority-high", "needs design"):
+            with self.subTest(label=banned):
+                self.assertNotIn(banned, scoring._WELCOME_LABELS)
+                self.assertFalse(scoring.is_welcome_label(banned))
 
     def test_analyze_vocabulary_is_derived_not_redeclared(self):
         """A second copy of the vocabulary is exactly the drift risk being removed."""

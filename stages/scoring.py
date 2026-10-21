@@ -60,29 +60,30 @@ _LABEL_NAMESPACE_PREFIXES = {
 }
 
 
-def _canonical_label(label: str, drop_short_prefix: bool = False) -> str:
+# 单字母/字母+数字的 topic 前缀（'E-help-wanted'、'P0-bug'、'C-docs'）。
+# **必须带连字符或下划线**：'no help wanted' / 'in help wanted' / 'we need contributor'
+# 这类反向或无关的说法，开头是普通词，不能被剥成 'help wanted' / 'need contributor'
+# ——那会把「不是欢迎」读成「欢迎」。
+_SHORT_TOPIC_PREFIX = re.compile(r"^[A-Za-z][0-9]?[-_]")
+
+
+def _canonical_label(label: str) -> str:
     """Strip decoration from a label so decorated spellings collapse together.
 
-    Removes emoji and punctuation, an optional namespace prefix ('status: volunteer
-    wanted' → 'volunteer wanted'), and folds a trailing plural 's'
-    ('contributions' ≡ 'contribution').
+    Removes a topic prefix ('E-help-wanted' → 'help wanted'), emoji and punctuation,
+    an optional namespace prefix ('status: volunteer wanted' → 'volunteer wanted'),
+    and folds a trailing plural 's' ('contributions' ≡ 'contribution').
 
-    `drop_short_prefix` additionally drops a ≤2-character leading token
-    ('E-help-wanted' → 'help wanted'). It is **off by default** because it is
-    destructive: with it on, 'pr welcome' collapses to 'welcome', and a repo whose
-    label is literally "Welcome" would then match the welcome vocabulary. Callers
-    match against a *set*, so trying the stripped form as an extra candidate is
-    safe; making it the default spelling is not.
+    Both sides of a comparison go through this, so the fold is consistent.
     """
     if not label:
         return ""
-    s = re.sub(r"[^\w]+", " ", str(label).strip().lower())
+    s = _SHORT_TOPIC_PREFIX.sub(" ", str(label).strip())
+    s = re.sub(r"[^\w]+", " ", s.lower())
     tokens = [t for t in s.split() if t]
     if not tokens:
         return ""
     if len(tokens) > 1 and tokens[0] in _LABEL_NAMESPACE_PREFIXES:
-        tokens = tokens[1:]
-    if drop_short_prefix and len(tokens) > 1 and len(tokens[0]) <= 2:
         tokens = tokens[1:]
     tokens = [t[:-1] if len(t) > 3 and t.endswith("s") else t for t in tokens]
     return " ".join(tokens)
@@ -91,18 +92,16 @@ def _canonical_label(label: str, drop_short_prefix: bool = False) -> str:
 _CANON_EXPLICIT = {_canonical_label(x) for x in _WELCOME_LABELS_EXPLICIT}
 _CANON_EXTRA = {_canonical_label(x) for x in _EXTRA_WELCOME_LABELS}
 
-# 词表全集，供外部引用（analyze.py 的 WELCOME_LABELS 由它派生）。
+# 词表的**基准拼写**全集，供外部引用（analyze.py 的 WELCOME_LABELS 由它派生）。
 # **判定走 is_welcome_label()，不走这个集合** —— 2026-10-21 之前 _WELCOME_LABELS
-# 是判定依据，现在它只是三份行为集合的并集视图；留着它是因为外部代码和
-# tests/test_regressions.py 要引用「生产者词表不窄于消费者词表」这条不变式。
+# 是判定依据，现在它只是三份行为集合的并集视图；留着它是因为外部代码要引用
+# 「生产者词表不窄于消费者词表」这条不变式。
+#
+# 注意它是**基准拼写**，不是判定接受的全集：is_welcome_label() 还会接受带装饰的写法
+# （'❓ help wanted'、'E-help-wanted'、'status: volunteer wanted'、'contribution welcome'…），
+# 那些不在这个集合里。要看判定接受什么，去看 is_welcome_label()。
 _WELCOME_LABELS = (_WELCOME_LABELS_EXPLICIT | _WELCOME_LABELS_EXACT_ONLY
                    | _EXTRA_WELCOME_LABELS)
-
-
-def _canonical_variants(label: str):
-    """The spellings of a label worth trying: as-is, and without a short prefix."""
-    yield _canonical_label(label)
-    yield _canonical_label(label, drop_short_prefix=True)
 
 
 def is_welcome_label(label) -> bool:
@@ -116,10 +115,10 @@ def is_welcome_label(label) -> bool:
     if not isinstance(label, str) or not label:
         return False
     raw = label.strip().lower()
-    if raw in _WELCOME_LABELS_EXACT_ONLY or raw in _WELCOME_LABELS_EXPLICIT:
+    if raw in _WELCOME_LABELS_EXACT_ONLY:
         return True
-    return any(canon in _CANON_EXPLICIT or canon in _CANON_EXTRA
-               for canon in _canonical_variants(label))
+    canon = _canonical_label(label)
+    return canon in _CANON_EXPLICIT or canon in _CANON_EXTRA
 
 
 def _loads_evidence(raw):
