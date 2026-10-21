@@ -14,6 +14,14 @@ if [ -f "$PIPELINE_DIR/.env" ]; then
 fi
 CLI_TOOL="${CLI_TOOL:-claude --dangerously-skip-permissions}"
 
+# judge 的最终文字总结可能很长（20 行逐条证据 + 限定说明 + 记忆沉淀）。输出上限太低时
+# 会话会在**写总结那一刻**以 "response exceeded the maximum output tokens" 失败，
+# 整批白跑（2026-10-21 实测：继承 8192 上限的会话在第 6 批因此失败两次，
+# 每次重试都要重做 30 分钟的取证）。取一个下限，不覆盖更高的用户设置。
+if [ "${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-0}" -lt 32768 ] 2>/dev/null; then
+  export CLAUDE_CODE_MAX_OUTPUT_TOKENS=32768
+fi
+
 BATCH_SIZE=${1:-20}
 BUDGET=${2:-100}
 for v in "$BATCH_SIZE" "$BUDGET"; do

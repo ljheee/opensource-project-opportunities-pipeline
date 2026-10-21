@@ -22,6 +22,14 @@ if [ -f "$PIPELINE_DIR/.env" ]; then
 fi
 CLI_TOOL="${CLI_TOOL:-claude --dangerously-skip-permissions}"
 
+# judge 的最终文字总结可能很长（20 行逐条证据 + 限定说明 + 记忆沉淀）。输出上限太低时
+# 会话会在**写总结那一刻**以 "response exceeded the maximum output tokens" 失败，
+# 整批白跑（2026-10-21 实测：继承 8192 上限的会话在第 6 批因此失败两次，
+# 每次重试都要重做 30 分钟的取证）。取一个下限，不覆盖更高的用户设置。
+if [ "${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-0}" -lt 32768 ] 2>/dev/null; then
+  export CLAUDE_CODE_MAX_OUTPUT_TOKENS=32768
+fi
+
 # v3 灰度开关：v2=现有链路（默认），v3=analyze_v3 精炼 + verify 对抗验证 + validate 机器核账
 ANALYZE_PROMPT_VERSION="${ANALYZE_PROMPT_VERSION:-v2}"
 VERIFY_MAX_PER_RUN="${VERIFY_MAX_PER_RUN:-50}"     # 本次运行 verify 总预算（条）
