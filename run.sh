@@ -289,12 +289,17 @@ if [ "$PENDING" -eq 0 ]; then
     if git -C "$PIPELINE_DIR" push; then
       _push_ok=1; break
     fi
-    echo "WARN: git push 失败（attempt $_i/3），10 秒后 pull --rebase 再试..."
+    echo "WARN: git push 失败（attempt $_i/3），10 秒后重试..."
     sleep 10
-    git -C "$PIPELINE_DIR" pull --rebase || true
   done
-  [ "$_push_ok" -eq 0 ] && \
-    echo "ERROR: git push 连续 3 次失败，请手动推送：cd $PIPELINE_DIR && git pull --rebase && git push"
+  if [ "$_push_ok" -eq 0 ]; then
+    # 不自动 pull --rebase：data/pipeline.db 是二进制文件，两边都改过时 rebase 会
+    # 留下冲突的 rebase 状态（`|| true` 还会把失败吞掉），比推送失败更难收拾。
+    echo "ERROR: git push 连续 3 次失败，请手动合并后推送："
+    echo "       git -C \"$PIPELINE_DIR\" pull --no-rebase"
+    echo "       # 解决 data/pipeline.db 冲突（按表取并集）后 git add && git push"
+    echo "       远端可能已有新提交（daily discover 只加项目/任务/发现日志），需手工按表取并集合并。"
+  fi
   exit 0
 fi
 

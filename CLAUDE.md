@@ -122,6 +122,14 @@ filtered_skip (terminal)
 - **测试**：`tests/` 下有 unittest 烟雾测试（`python3 -m unittest discover -s tests`），验证另靠各 stage 的 `--dry-run`、SQLite 查询以及报告内容检查。
 - **find → verify 双阶段**：分析（find）与验证（verify）在不同 LLM 会话，验证者看不到分析推理、默认立场为反驳；验证状态复用 opportunities.status 枚举（verified/refuted），验证理由写 JSONL 日志不进 DB（零 DDL）。
 - **welcome label 判定只有一份实现**：`stages/scoring.py` 的 `is_welcome_label()` 是唯一判定入口，`stages/analyze.py` 直接 `from stages.scoring import is_welcome_label`——生产者不能比消费者窄，两边各写一份必然漂移（2026-10-20 前就是这样：消费者学会了归一化装饰写法，生产者没学，8 条真实欢迎标签被漏掉）。导入必须走 `stages.scoring` 这条路径，导入成顶层 `scoring` 会加载出第二份独立副本。归一化只做**装饰**（emoji、命名空间前缀、连字符、单复数），且只对「明确欢迎措辞」开放；`enhancement` / `feature-request` / `accepted` 这类**报告者常自贴**的弱信号只做精确匹配，否则 `type: enhancement` / `⭐ enhancement` 会集体伪装成 welcoming 并被 `score_value` 提升一档。
-- **judge 写回的 `welcome_labels` 只放欢迎类 label**，不放该 issue 的完整 label 列表。2026-10-20 实测 783 行的 `welcome_labels` 里装的是 `feature` / `bug` / `question` / `triage` 之类——那是分类标签，不是欢迎标签。`stages/validate.py` 只会剥离**不存在的**（phantom）label，不会剥离「存在但不是欢迎类」的 label，所以这条约束靠 prompt 落实。
+- **judge 写回的 `welcome_labels` 只放欢迎类 label**，不放该 issue 的完整 label 列表。2026-10-20 实测 783 行的 `welcome_labels` 里装的是 `feature` / `bug` / `question` / `triage` 之类——那是分类标签，不是欢迎标签。这条约束现在**由机器层强制**：`stages/validate.py` 已经拿到了 issue 的真实 label 列表，除了剥离**不存在的**（phantom）label，还用 `is_welcome_label` 剥离「存在但不是欢迎类」的 label（prompt 里同时保留说明，让 judge 少写垃圾）。
+- **历史评分不追改**：`stages/scoring.py` 只处理 `value IS NULL` 的行，规则改了也不重算历史。
+  2026-10-21 实测：624 行的 `maintainer_signal` 与现行规则重算结果不一致，其中 617 行带的是
+  ≤365 天的 merged PR——即 5761b93 废除「近期 merged PR = welcoming」之前的旧规则输出。
+  **按既定立场不追改**（merged-PR 噪音的修复落在信号生成处，不做历史降级）；
+  它们会随 verify 复评逐步收敛。verify 阶段在 2026-10-21 自己也发现了这一系统性状态
+  并同样没有借机改写。
+  **但要分清「规则变了」与「数据被写坏了」**：后者（如 judge 违反 prompt 越权写评分列）
+  要置 NULL 重算并留档 `data/rescore_log/`。两者的处置完全不同。
 - **报告对「已验证但评级偏低」单独开一节**：上游表按 `value IN ('high','medium')` 过滤，`status='verified'` 且 `value='low'` 的行会被整类漏掉——那是「验证说好、规则说不值」的矛盾状态（2026-10-21 实测全库 22 条，占已验证行 2.6%）。`stages/report.py` 把它们放进「已验证但评级偏低的补充机会」章节，不混进高价值表。
 
