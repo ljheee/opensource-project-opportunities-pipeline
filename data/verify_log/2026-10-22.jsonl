@@ -1,0 +1,1 @@
+{"opportunity_id": 7900, "project_id": "open-telemetry/opentelemetry-js", "source": "validate", "verdict": "corrected", "reason": "剥离/置空伪证据: strip:welcome_labels", "checks": [], "corrections": ["strip:welcome_labels"], "ts": "2026-10-22T13:36:18.785163+00:00"}
