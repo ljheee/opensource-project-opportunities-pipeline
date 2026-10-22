@@ -131,5 +131,21 @@ filtered_skip (terminal)
   并同样没有借机改写。
   **但要分清「规则变了」与「数据被写坏了」**：后者（如 judge 违反 prompt 越权写评分列）
   要置 NULL 重算并留档 `data/rescore_log/`。两者的处置完全不同。
+- **LLM 会话一律走看门狗**（`lib/pipeline_watchdog.sh`）：会话可能**静默挂死**——进程活着、
+  不报错、一行数据库都不写（2026-10-21 实测单批挂 2 小时 6 分钟）。脚本的重试只在 CLI
+  **非零退出**时触发，而挂死的进程不会退出 → 整轮卡死且无任何提示。
+  判活要**双信号**：**输出流在增长**（CLI 用 `--output-format stream-json --verbose`，
+  每个事件实时落盘）+ **探针 SQL 的返回值在变化**（业务写入进度）。
+  只看写库进度会误杀「先做 30–60 分钟 code search 再一次性写库」的健康批次；
+  只看输出流在 cursor-agent 分支上不成立。超时（默认 15 分钟）杀**进程组**
+  （`pkill -P` + `kill -9`，否则 eval 的子进程会留下继续跑）并返回非零触发重试。
+  `run.sh` / `run_bulk_v2.sh` 的**全部** CLI 调用点（精炼、v3 verify、filter）都必须走它——
+  裸 `eval "$CLI_TOOL"` 会被 `tests/test_watchdog.py` 的结构断言挡住。
+- **judge 的输出 token 上限要设下限**：judge 写最终总结时需要一次输出上万 token，
+  上限太低会以 `response exceeded the maximum output tokens` 失败，**整批取证白做**
+  （2026-10-21 实测因继承的 8192 上限连续失败两次，每次重试重做 30 分钟）。
+  三个 runner 里都有 `CLAUDE_CODE_MAX_OUTPUT_TOKENS` 的下限（32768，不覆盖更高的用户设置）。
+  上限本身来自**启动它的会话环境**（`~/.claude/settings.json` 的 env 块会覆盖 shell profile），
+  所以 shell 配置里设了不算数。逐条理由已写进 pending JSON，正文总结不必复述（≤20 行）。
 - **报告对「已验证但评级偏低」单独开一节**：上游表按 `value IN ('high','medium')` 过滤，`status='verified'` 且 `value='low'` 的行会被整类漏掉——那是「验证说好、规则说不值」的矛盾状态（2026-10-21 实测全库 22 条，占已验证行 2.6%）。`stages/report.py` 把它们放进「已验证但评级偏低的补充机会」章节，不混进高价值表。
 
