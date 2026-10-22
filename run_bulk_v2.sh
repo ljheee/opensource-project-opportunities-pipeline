@@ -157,12 +157,18 @@ git -C "$PIPELINE_DIR" pull --rebase || \
 
 python3 "$STAGES/init_db.py"
 
-# 把跨天遗留的 bulk 任务（pending/running/analyzed）归到当天，统一交给主循环处理。
+# 把跨天遗留的任务（pending/running/analyzed）归到当天，统一交给主循环处理。
 # 必须在 reset 块之前执行：否则跨天 analyzed 任务（task_date 仍是昨天）无法被
 # reset 块的 "task_date='今天' AND status='analyzed'" 识别，项目会被误降级为 bulk_pending。
 # 注意去重：同一 (project_id, task_type) 可能存在多条跨天遗留任务，直接 UPDATE 会撞
 # UNIQUE(project_id, task_date, task_type)。处理顺序：①同组只留最新一条，其余标
 # skipped；②与今天已有任务冲突的标 skipped；③迁移剩余。
+#
+# 2026-10-22：这个块原先**只管 bulk_first/bulk_followup**，于是 triggered /
+# incremental 的跨天遗留任务永远留在旧日期上——而 schedule.py 的两个生成器都排除
+# 「任何日期已有 pending 任务」的项目，所以这些项目会被**永久**排除在后续调度之外。
+# run.sh 的同名块本来就不限 task_type，这里照齐（跑 bulk 路径时不要把当天的
+# 增量/触发任务留在昨天）。
 sqlite3 "$DB" "
   UPDATE tasks
   SET status='skipped', finished_at=strftime('%Y-%m-%dT%H:%M:%S+00:00','now')
