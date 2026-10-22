@@ -8,6 +8,10 @@ set -euo pipefail
 #    改 prompts/*.md 与 stages/*.py 是安全的（前者按批渲染成临时文件，后者一次性读入）。
 
 PIPELINE_DIR="$(cd "$(dirname "$0")" && pwd)"
+
+# 共用看门狗（lib/ 随仓库入库，不是 scripts/ 里的临时产物）
+# shellcheck source=lib/pipeline_watchdog.sh
+. "$PIPELINE_DIR/lib/pipeline_watchdog.sh"
 DB="$PIPELINE_DIR/data/pipeline.db"
 PROMPTS="$PIPELINE_DIR/prompts"
 STAGES="$PIPELINE_DIR/stages"
@@ -116,10 +120,12 @@ run_v3_verify() {
     while [ "$_attempt" -le "${#_backoffs[@]}" ]; do
       _attempt=$((_attempt + 1))
       [ "$_attempt" -gt 1 ] && echo "[v3] verify 第 $_attempt 次尝试..."
-      if echo "$CLI_TOOL" | grep -qE "cursor-agent|agent"; then
-        if eval "$CLI_TOOL" < "$_VERIFY_TMP"; then _ok=1; break; fi
-      else
-        if eval "$CLI_TOOL" --print - < "$_VERIFY_TMP"; then _ok=1; break; fi
+      # 看门狗：会话可能静默挂死（进程活着、零写入），非零退出才触发的重试等不到。
+      # 探针 = 本批机会点里已被裁决（verified/refuted）的条数。
+      _VERIFY_PROBE="SELECT COUNT(*) FROM opportunities
+                      WHERE id IN ($opp_csv) AND status IN ('verified','refuted');"
+      if _llm_with_watchdog "$_VERIFY_TMP" "/tmp/verify_out.$$.json" "$_VERIFY_PROBE"; then
+        _ok=1; break
       fi
       if [ "$_attempt" -le "${#_backoffs[@]}" ]; then
         echo "WARN: verify 第 $_attempt 次失败（退出码非零），${_backoffs[$((_attempt - 1))]}s 后重试..."
@@ -241,16 +247,13 @@ if [ "$FILTER_COUNT" -gt 0 ]; then
       echo "WARN: 语义过滤已执行 20 轮，仍有未过滤项目，跳出循环。"
       break
     fi
-    if echo "$CLI_TOOL" | grep -qE "cursor-agent|agent"; then
-      eval "$CLI_TOOL" < "$_FILTER_TMP" || {
-        echo "WARN: agent filter 返回非零退出码（round=${_filter_rounds}），本轮跳过，剩余项目留待下次重试。"
-        break
-      }
+    # 看门狗：filter 会话同样可能静默挂死。探针 = 还没过滤完的项目数（越做越少）。
+    _FILTER_PROBE="SELECT COUNT(*) FROM project_meta WHERE filter_status='pending';"
+    if _llm_with_watchdog "$_FILTER_TMP" "/tmp/filter_out.$$.json" "$_FILTER_PROBE"; then
+      :
     else
-      eval "$CLI_TOOL" --print - < "$_FILTER_TMP" || {
-        echo "WARN: claude filter 返回非零退出码（round=${_filter_rounds}），本轮跳过，剩余项目留待下次重试。"
-        break
-      }
+      echo "WARN: $(_watchdog_cli_label) filter 返回非零退出码（round=${_filter_rounds}），本轮跳过，剩余项目留待下次重试"
+      break
     fi
   done
   rm -f "$_FILTER_TMP"
@@ -373,10 +376,13 @@ while [ "$processed" -lt "$TOTAL_PROJECTS" ]; do
   while [ "$_judge_attempt" -le "${#_JUDGE_BACKOFFS[@]}" ]; do
     _judge_attempt=$((_judge_attempt + 1))
     [ "$_judge_attempt" -gt 1 ] && echo "[Batch $batch_num] CLI judgment 第 $_judge_attempt 次尝试..."
-    if echo "$CLI_TOOL" | grep -qE "cursor-agent|agent"; then
-      if eval "$CLI_TOOL" < "$_ANALYZE_V2_TMP"; then _judge_ok=1; break; fi
-    else
-      if eval "$CLI_TOOL" --print - < "$_ANALYZE_V2_TMP"; then _judge_ok=1; break; fi
+    # 看门狗：会话可能静默挂死（进程活着、零写入），重试只在非零退出时触发 → 整轮卡死。
+    # 探针 = 本批任务下已不是 draft 的机会点条数（精炼阶段把 draft 改成 open）。
+    _JUDGE_PROBE="SELECT COUNT(*) FROM opportunities o JOIN tasks t ON t.id = o.task_id
+                   WHERE t.id IN ($(echo "$TASK_IDS_CSV" | sed 's/,/, /g'))
+                     AND o.status <> 'draft';"
+    if _llm_with_watchdog "$_ANALYZE_V2_TMP" "/tmp/refine_out.$$.json" "$_JUDGE_PROBE"; then
+      _judge_ok=1; break
     fi
     if [ "$_judge_attempt" -le "${#_JUDGE_BACKOFFS[@]}" ]; then
       _wait=${_JUDGE_BACKOFFS[$((_judge_attempt - 1))]}
